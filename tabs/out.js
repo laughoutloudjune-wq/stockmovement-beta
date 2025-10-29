@@ -1,11 +1,14 @@
-// tabs/out.js (v12.3-beta)
-// Material OUT screen with FAB + OUT History overlay (small modal on desktop, fullscreen on mobile)
+// tabs/out.js (v12.3-beta rev2)
+// Material OUT screen with FAB + OUT History overlay (hybrid modal)
+// - Fixed: edit document now loads correctly (trimmed docNo, safe handling)
+// - Larger modal on desktop (640px wide, 80vh height)
 
 import {
   $, $$, STR, bindPickerInputs, openPicker,
   apiGet, apiPost, setBtnLoading, esc, toast, todayStr, stockBadge, clampList
 } from '../js/shared.js';
 
+/* ---------------- LINE BUILDER ---------------- */
 function OutLine(lang){
   const card=document.createElement('div');
   card.className='line';
@@ -77,6 +80,7 @@ function collectLines(rootSel){
   return out;
 }
 
+/* ---------------- MAIN MOUNT ---------------- */
 export default async function mount({ root, lang }){
   const S=STR[lang];
   root.innerHTML=`
@@ -117,10 +121,15 @@ export default async function mount({ root, lang }){
       </button>
     </div>
 
-    <div id="outHistoryOverlay" aria-hidden="true" style="position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;background:rgba(15,18,23,0.15);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);pointer-events:none;">
+    <!-- OUT History Overlay -->
+    <div id="outHistoryOverlay" aria-hidden="true"
+         style="position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;
+                background:rgba(15,18,23,0.15);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);pointer-events:none;">
       <div id="outHistoryBox" class="glass" role="dialog" aria-modal="true"
-           style="border-radius:18px;box-shadow:var(--shadow-l);display:flex;flex-direction:column;width:100%;height:100%;overflow:hidden;max-width:520px;max-height:70vh;">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;border-bottom:1px solid var(--border-weak);background:#fff;">
+           style="border-radius:18px;box-shadow:var(--shadow-l);display:flex;flex-direction:column;
+                  width:100%;height:100%;overflow:hidden;max-width:640px;max-height:80vh;">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;
+                    border-bottom:1px solid var(--border-weak);background:#fff;">
           <h3 style="margin:0;font-size:1rem;">📜 ${lang==='th'?'ประวัติการจ่ายออก':'OUT History'}</h3>
           <button class="btn small" id="closeOutHistory" type="button">${lang==='th'?'ปิด':'Close'}</button>
         </div>
@@ -130,6 +139,7 @@ export default async function mount({ root, lang }){
     </div>
   `;
 
+  /* ---------------- BASIC FORM ---------------- */
   const lines=$('#outLines',root);
   function addLine(){ lines.appendChild(OutLine(lang)); bindPickerInputs(root,lang); }
   function clearForm(){
@@ -185,7 +195,7 @@ export default async function mount({ root, lang }){
   $('#OutDate',root).value=todayStr();
   addLine();
 
-  /* ===== OUT HISTORY OVERLAY ===== */
+  /* ---------------- OUT HISTORY OVERLAY ---------------- */
   const openBtn=$('#openOutHistoryBtn',root);
   const overlay=$('#outHistoryOverlay',root);
   const box=$('#outHistoryBox',root);
@@ -197,11 +207,17 @@ export default async function mount({ root, lang }){
     overlay.style.display='flex';
     overlay.style.pointerEvents='auto';
     overlay.setAttribute('aria-hidden','false');
-    // auto fullscreen on mobile
+
     if(window.innerWidth<769){
-      box.style.width='100%'; box.style.height='100%'; box.style.maxWidth='none'; box.style.maxHeight='none'; box.style.borderRadius='0';
+      box.style.width='100%';
+      box.style.height='100%';
+      box.style.maxWidth='none';
+      box.style.maxHeight='none';
+      box.style.borderRadius='0';
     }else{
-      box.style.width='520px'; box.style.maxHeight='70vh'; box.style.borderRadius='18px';
+      box.style.width='640px';
+      box.style.maxHeight='80vh';
+      box.style.borderRadius='18px';
     }
     loadOutHistory();
   }
@@ -216,6 +232,7 @@ export default async function mount({ root, lang }){
   closeBtn.addEventListener('click',closeOverlay);
   overlay.addEventListener('click',e=>{ if(e.target===overlay) closeOverlay(); });
 
+  /* ---------------- LOAD HISTORY ---------------- */
   async function loadOutHistory(){
     listEl.innerHTML='';
     for(let i=0;i<5;i++){ const r=document.createElement('div'); r.className='skeleton-row'; listEl.appendChild(r); }
@@ -245,11 +262,16 @@ export default async function mount({ root, lang }){
     }
   }
 
+  /* ---------------- OPEN DOCUMENT FOR EDIT ---------------- */
   async function openOutDoc(docNo){
+    const docTrimmed=(docNo||'').toString().trim();
+    if(!docTrimmed) return toast(lang==='th'?'ไม่พบเลขที่เอกสาร':'Missing document number');
     editCard.innerHTML='<div class="meta">'+(lang==='th'?'กำลังโหลด...':'Loading...')+'</div>';
+
     try{
-      const res=await apiPost('out_GetDoc',{docNo});
-      if(!res.ok||!res.doc) throw new Error(res.message||'Not found');
+      const res=await apiPost('out_GetDoc',{docNo:docTrimmed});
+      if(!res||!res.ok||!res.doc) throw new Error(res?.message||'Not found');
+
       const d=res.doc;
       const linesHtml=d.lines.map(li=>
         `<div class="row" data-item="${esc(li.item)}" style="display:flex;gap:.5rem;align-items:center;">
@@ -258,6 +280,7 @@ export default async function mount({ root, lang }){
           <button class="btn small red" type="button">×</button>
         </div>`
       ).join('');
+
       editCard.innerHTML=`
         <h3>${lang==='th'?'แก้ไขเอกสาร':'Edit Document'} ${esc(d.docNo)}</h3>
         <div class="meta">${esc(d.ts)} • ${esc(d.project||'-')}</div>
@@ -266,7 +289,9 @@ export default async function mount({ root, lang }){
           <button class="btn primary" id="saveOutEdit">${S.save}</button>
         </div>
       `;
+
       $$('#outEditCard .row button').forEach(b=>b.onclick=()=>b.closest('.row').remove());
+
       $('#saveOutEdit').onclick=async()=>{
         const lines=[];
         $$('#outEditCard .row[data-item]').forEach(r=>{
@@ -277,7 +302,7 @@ export default async function mount({ root, lang }){
         if(!lines.length) return toast(lang==='th'?'ต้องมีอย่างน้อย 1 รายการ':'At least one line required');
         setBtnLoading($('#saveOutEdit'),true);
         try{
-          const res2=await apiPost('out_UpdateDoc',{docNo:d.docNo,lines});
+          const res2=await apiPost('out_UpdateDoc',{docNo:d.docNo.trim(),lines});
           if(res2.ok){
             toast(lang==='th'?'บันทึกแล้ว':'Saved');
             await loadOutHistory();
@@ -289,7 +314,8 @@ export default async function mount({ root, lang }){
           setBtnLoading($('#saveOutEdit'),false);
         }
       };
-    }catch{
+    }catch(err){
+      console.warn('openOutDoc error:',err);
       editCard.innerHTML=`<div class="meta" style="color:#b91c1c">${lang==='th'?'โหลดไม่สำเร็จ':'Failed to load document'}</div>`;
     }
   }
