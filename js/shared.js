@@ -3,7 +3,7 @@
 
 export const API_URL =
   window.API_URL ||
-  "https://script.google.com/macros/s/AKfycbwEJDNfo63e0LjEZa-bhXmX3aY2PUs96bUBGz186T-pVlphV4NGNYxGT2tcx1DWgbDI/exec";
+  "https://script.google.com/macros/s/AKfycbxQdBQQXnKOtfgQMxM3tdFPytu66CigJXL3n-bKybcmKbMSZ6lBp_Msd87_mEdxTyBZ/exec";
 
 export const $  = (q, r = document) => r.querySelector(q);
 export const $$ = (q, r = document) => Array.prototype.slice.call(r.querySelectorAll(q));
