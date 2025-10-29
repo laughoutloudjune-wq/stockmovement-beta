@@ -1,215 +1,250 @@
 // tabs/out.js
-import { $, $$, STR, preloadLookups, bindPickerInputs,
-         outSearch, outUpdate, toast, esc, openModal } from '../js/shared.js';
+// Material OUT screen with speed-dial FAB (“Add Item” + “Submit Form”).
+// Unit field removed. Restores "Current Stock" badge per line.
 
-const PER_PAGE = 25;
-const el = (html) => { const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; };
-const fmtDate = (v) => v || '';
+import {
+  $, $$, STR, bindPickerInputs, openPicker,
+  apiGet, apiPost, setBtnLoading, esc, toast, todayStr, stockBadge
+} from '../js/shared.js';
 
-export default async function mountOut({ root, lang }){
-  const S = STR[lang].out;
-  await preloadLookups();
+function OutLine(lang){
+  const card=document.createElement('div'); 
+  card.className='line';
 
-  root.innerHTML = '';
-  root.appendChild(el(`
-    <section style="padding:0">
-      <div style="padding:1rem">
-        <h2 style="margin:.2rem 0 1rem 0">${S.title}</h2>
-        <div class="filters" style="display:grid; gap:.5rem; grid-template-columns: repeat(6, minmax(0,1fr)); align-items:end">
-          <div><label>${S.project}</label><input id="fProject" data-src="projects" placeholder="${S.project}" /></div>
-          <div><label>${S.contractor}</label><input id="fContractor" data-src="contractors" placeholder="${S.contractor}" /></div>
-          <div><label>${S.requester}</label><input id="fRequester" data-src="requesters" placeholder="${S.requester}" /></div>
-          <div><label>${S.material}</label><input id="fMaterial" data-src="materials" placeholder="${S.material}" /></div>
-          <div><label>${S.from}</label><input type="date" id="fFrom" /></div>
-          <div><label>${S.to}</label><input type="date" id="fTo" /></div>
-          <div style="grid-column: span 6; display:flex; gap:.5rem; justify-content:flex-end">
-            <button id="btnSearch" class="btn primary">${S.search}</button>
-            <button id="btnReset" class="btn">${S.reset}</button>
-          </div>
-        </div>
-      </div>
-      <div style="border-top:1px solid rgba(0,0,0,.06)">
-        <div style="display:flex; align-items:center; padding:.5rem 1rem; gap:.5rem; border-bottom:1px solid rgba(0,0,0,.06)">
-          <strong>${S.result}</strong>
-          <span id="resultCount" class="chip">0</span>
-          <div style="margin-left:auto; display:flex; gap:.5rem; align-items:center">
-            <input id="quickSearch" placeholder="${S.material} / ${S.doc}" style="min-width:220px" />
-          </div>
-        </div>
-        <div style="overflow:auto">
-          <table class="tbl" id="outTbl">
-            <thead>
-              <tr>
-                <th>${S.date}</th>
-                <th>${S.doc}</th>
-                <th>${S.project}</th>
-                <th>${S.contractor}</th>
-                <th>${S.requester}</th>
-                <th>${S.material}</th>
-                <th style="text-align:right">${S.qty}</th>
-                <th>${S.unit}</th>
-                <th>${S.location}</th>
-                <th>${S.note}</th>
-                <th>${S.actions}</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div id="pager" style="display:flex; gap:.5rem; justify-content:flex-end; padding:.5rem 1rem">
-          <button id="prevPg" class="btn" disabled>‹</button>
-          <span id="pgInfo" class="meta"></span>
-          <button id="nextPg" class="btn" disabled>›</button>
-        </div>
-      </div>
-    </section>
-  `));
+  // Inputs
+  const name=document.createElement('input');
+  name.placeholder=(lang==='th' ? 'พิมพ์เพื่อค้นหา…' : 'Type to search…');
+  name.readOnly=true; 
+  name.setAttribute('data-picker','materials');
 
-  bindPickerInputs(root, lang);
+  const qty=document.createElement('input');
+  qty.type='number'; 
+  qty.min='0'; 
+  qty.step='any'; 
+  qty.placeholder='0'; 
+  qty.inputMode='decimal';
 
-  const els = {
-    fProject: $('#fProject', root),
-    fContractor: $('#fContractor', root),
-    fRequester: $('#fRequester', root),
-    fMaterial: $('#fMaterial', root),
-    fFrom: $('#fFrom', root),
-    fTo: $('#fTo', root),
-    btnSearch: $('#btnSearch', root),
-    btnReset: $('#btnReset', root),
-    quickSearch: $('#quickSearch', root),
-    tbody: $('#outTbl tbody', root),
-    resultCount: $('#resultCount', root),
-    prevPg: $('#prevPg', root),
-    nextPg: $('#nextPg', root),
-    pgInfo: $('#pgInfo', root),
-  };
+  const note=document.createElement('input');
+  note.placeholder=(lang==='th'?'หมายเหตุ (ถ้ามี)':'Note (optional)');
 
-  const state = { rows:[], total:0, page:1, per:PER_PAGE, filters:{} };
+  // Grid (name, qty, note)
+  const grid=document.createElement('div'); 
+  grid.className='grid';
+  grid.appendChild(name);
+  grid.appendChild(qty);
+  grid.appendChild(note);
 
-  function readFilters(){
-    state.filters = {
-      project: els.fProject.value.trim() || null,
-      contractor: els.fContractor.value.trim() || null,
-      requester: els.fRequester.value.trim() || null,
-      material: els.fMaterial.value.trim() || null,
-      from: els.fFrom.value || null,
-      to: els.fTo.value || null,
-      q: els.quickSearch.value.trim().toLowerCase() || null,
-    };
-  }
+  // Meta row: Stock badge
+  const meta=document.createElement('div'); 
+  meta.className='rowitem'; 
+  meta.style.justifyContent='flex-start';
 
-  async function doSearch(){
-    readFilters();
-    const res = await outSearch(state.filters, 1, 10000);
-    state.rows = Array.isArray(res.rows) ? res.rows : (res.items || []);
-    state.total = res.total ?? (state.rows ? state.rows.length : 0);
-    state.page = 1;
-    renderTable();
-  }
+  const label=document.createElement('span'); 
+  label.className='meta'; 
+  label.textContent = (lang==='th' ? 'คงเหลือ: ' : 'Stock: ');
 
-  function renderTable(){
-    const start = (state.page-1)*state.per;
-    const pageRows = (state.rows||[]).slice(start, start+state.per);
-    els.tbody.innerHTML = pageRows.map(r => `
-      <tr data-id="${esc(r.ID || r.id)}">
-        <td>${fmtDate(r.Date || r.date)}</td>
-        <td>${esc(r.DocNo || r.docNo || '')}</td>
-        <td>${esc(r.Project || r.project || '')}</td>
-        <td>${esc(r.Contractor || r.contractor || '')}</td>
-        <td>${esc(r.Requester || r.requester || '')}</td>
-        <td>${esc(r.Material || r.material || '')}</td>
-        <td style="text-align:right">${r.Qty ?? r.qty ?? ''}</td>
-        <td>${esc(r.Unit || r.unit || '')}</td>
-        <td>${esc(r.Location || r.location || '')}</td>
-        <td>${esc(r.Note || r.note || '')}</td>
-        <td><button class="btn small" data-edit="${esc(r.ID || r.id)}">${STR[lang].out.edit}</button></td>
-      </tr>
-    `).join('');
-    $$('.btn.small[data-edit]', root).forEach(b => b.addEventListener('click', onEdit));
+  // start as "-" badge
+  let badge = document.createElement('span'); 
+  badge.className='badge'; 
+  badge.textContent='-';
 
-    const pages = Math.max(1, Math.ceil((state.total||0)/state.per));
-    els.prevPg.disabled = state.page<=1;
-    els.nextPg.disabled = state.page>=pages;
-    els.pgInfo.textContent = `${state.page} / ${pages}`;
-    els.resultCount.textContent = String(state.total || 0);
-    if (!state.total){
-      els.tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; opacity:.6; padding:.8rem">${STR[lang].out.noData}</td></tr>`;
+  meta.appendChild(label); 
+  meta.appendChild(badge);
+
+  // Row actions
+  const actions=document.createElement('div'); 
+  actions.className='actions';
+  const rm=document.createElement('button'); 
+  rm.type='button'; 
+  rm.className='btn small'; 
+  rm.textContent='×'; 
+  rm.onclick=()=>card.remove();
+  actions.appendChild(rm);
+
+  // Compose line
+  card.appendChild(grid); 
+  card.appendChild(meta); 
+  card.appendChild(actions);
+
+  // Open picker
+  name.addEventListener('click', ()=>openPicker(name,'materials', lang));
+
+  // After selection, fetch current stock and update badge
+  name.addEventListener('change', async ()=>{
+    const v = name.value.trim();
+    if (!v) { 
+      const bNew = document.createElement('span');
+      bNew.className='badge'; 
+      bNew.textContent='-';
+      meta.replaceChild(bNew, badge);
+      badge = bNew;
+      return;
     }
-  }
+    // show tiny spinner while fetching
+    const spin = document.createElement('span');
+    spin.className = 'badge';
+    spin.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>';
+    meta.replaceChild(spin, badge);
+    badge = spin;
 
-  async function onEdit(e){
-    const id = e.currentTarget.getAttribute('data-edit');
-    const row = (state.rows||[]).find(r => String(r.ID||r.id) === String(id));
-    if (!row) return;
-    const S = STR[lang].out;
+    try{
+      const res = await apiGet('getCurrentStock', { material: v });
+      const n  = (res && res.ok) ? Number(res.stock) : null;
+      const mn = (res && res.ok) ? Number(res.min||0) : null;
+      const bNew = stockBadge(n, mn); // uses shared color logic (red/yellow/green)
+      meta.replaceChild(bNew, badge);
+      badge = bNew;
+    }catch(e){
+      const bErr = document.createElement('span');
+      bErr.className='badge red';
+      bErr.textContent='!';
+      meta.replaceChild(bErr, badge);
+      badge = bErr;
+    }
+  });
 
-    const modal = openModal(`
-      <div class="modal-hd"><strong>${S.edit}: ${esc(row.DocNo || row.docNo || '')}</strong></div>
-      <div class="modal-bd">
-        <div class="grid2">
-          <label>${S.date}<input type="date" id="mDate" value="${esc(row.Date || row.date || '')}"/></label>
-          <label>${S.doc}<input id="mDoc" value="${esc(row.DocNo || row.docNo || '')}"/></label>
-          <label>${S.project}<input id="mProject" data-src="projects" value="${esc(row.Project || row.project || '')}"/></label>
-          <label>${S.contractor}<input id="mContractor" data-src="contractors" value="${esc(row.Contractor || row.contractor || '')}"/></label>
-          <label>${S.requester}<input id="mRequester" data-src="requesters" value="${esc(row.Requester || row.requester || '')}"/></label>
-          <label>${S.material}<input id="mMaterial" data-src="materials" value="${esc(row.Material || row.material || '')}"/></label>
-          <label>${S.qty}<input id="mQty" type="number" step="1" min="0" value="${esc(row.Qty ?? row.qty ?? '')}"/></label>
-          <label>${S.unit}<input id="mUnit" value="${esc(row.Unit || row.unit || '')}"/></label>
-          <label>${S.location}<input id="mLoc" value="${esc(row.Location || row.location || '')}"/></label>
-          <label>${S.note}<input id="mNote" value="${esc(row.Note || row.note || '')}"/></label>
+  return card;
+}
+
+function collectLines(rootSel){
+  const out=[];
+  $$(rootSel+' .line').forEach(c=>{
+    const nameEl=c.querySelector('input[data-picker="materials"]');
+    const qtyEl=c.querySelector('input[type="number"]');
+    const noteEl=c.querySelector('input[placeholder^="หมายเหตุ"],input[placeholder^="Note"]');
+    const name=nameEl?nameEl.value.trim():'';
+    const qty=Number(qtyEl?qtyEl.value:0)||0;
+    const note=noteEl?noteEl.value.trim():'';
+    if (name) out.push({name, qty, note});
+  });
+  return out;
+}
+
+export default async function mount({ root, lang }){
+  const S = STR[lang];
+
+  root.innerHTML = `
+    <section class="card glass">
+      <h3>${S.outTitle}</h3>
+      <div class="row">
+        <div>
+          <label>${S.outDate}</label>
+          <input id="OutDate" type="date" />
+        </div>
+        <div>
+          <label>${S.proj}</label>
+          <input id="ProjectInput" data-picker="projects" placeholder="${S.pick}" readonly />
         </div>
       </div>
-      <div class="modal-ft">
-        <button class="btn" data-cancel>${S.cancel}</button>
-        <button class="btn primary" data-save>${S.save}</button>
+      <div class="row">
+        <div>
+          <label>${S.contractor}</label>
+          <input id="ContractorInput" data-picker="contractors" placeholder="${S.pickAdd}" readonly />
+        </div>
+        <div>
+          <label>${S.requester}</label>
+          <input id="RequesterInput" data-picker="requesters" placeholder="${S.pickAdd}" readonly />
+        </div>
       </div>
-    `, {
-      onOpen: (ov, close) => {
-        bindPickerInputs(ov, lang);
-        ov.querySelector('[data-cancel]').addEventListener('click', close);
-        ov.querySelector('[data-save]').addEventListener('click', async () => {
-          const patch = {
-            id: String(row.ID || row.id),
-            date: ov.querySelector('#mDate').value || null,
-            docNo: ov.querySelector('#mDoc').value.trim() || null,
-            project: ov.querySelector('#mProject').value.trim() || null,
-            contractor: ov.querySelector('#mContractor').value.trim() || null,
-            requester: ov.querySelector('#mRequester').value.trim() || null,
-            material: ov.querySelector('#mMaterial').value.trim() || null,
-            qty: Number(ov.querySelector('#mQty').value || 0),
-            unit: ov.querySelector('#mUnit').value.trim() || null,
-            location: ov.querySelector('#mLoc').value.trim() || null,
-            note: ov.querySelector('#mNote').value.trim() || null,
-          };
-          if (!patch.date || !patch.docNo || !patch.material){ toast(STR[lang].out.invalid); return; }
-          try{
-            const res = await outUpdate(patch);
-            if (!res || res.ok===false) throw new Error('update failed');
-            toast(STR[lang].out.edited);
-            await doSearch();
-            close();
-          }catch(err){
-            console.error('[out.update] error', err);
-            toast('Update failed');
-          }
-        });
-      }
-    });
+      <div class="row">
+        <div>
+          <label>${S.note}</label>
+          <input id="Note" placeholder="${lang==='th'?'ถ้ามี':'Optional'}" />
+        </div>
+      </div>
+      <div class="lines" id="outLines"></div>
+    </section>
+
+    <!-- Speed-Dial FAB -->
+    <div class="fab" id="fab">
+      <div class="mini" id="fabSubmitWrap" aria-hidden="true">
+        <div class="label">${S.btnSubmit}</div>
+        <button class="btn small primary" id="fabSubmitBtn" type="button">
+          <span class="btn-label">💾</span>
+          <span class="btn-spinner"><span class="spinner"></span></span>
+        </button>
+      </div>
+      <div class="mini" id="fabAddWrap" aria-hidden="true">
+        <div class="label">${S.btnAdd}</div>
+        <button class="btn small" id="fabAddBtn" type="button">
+          <span class="btn-label">＋</span>
+          <span class="btn-spinner"><span class="spinner"></span></span>
+        </button>
+      </div>
+      <button class="fab-main" id="fabMain" aria-expanded="false" aria-controls="fab">
+        <span class="icon">＋</span>
+      </button>
+    </div>
+  `;
+
+  const lines = $('#outLines', root);
+
+  function addLine(){ 
+    lines.appendChild(OutLine(lang)); 
+    bindPickerInputs(root, lang); 
   }
 
-  // events
-  els.btnSearch.addEventListener('click', doSearch);
-  els.btnReset.addEventListener('click', async () => {
-    els.fProject.value = els.fContractor.value = els.fRequester.value = els.fMaterial.value = '';
-    els.fFrom.value = els.fTo.value = ''; els.quickSearch.value='';
-    await doSearch();
-  });
-  els.quickSearch.addEventListener('input', doSearch);
-  els.prevPg.addEventListener('click', () => { if (state.page>1){ state.page--; renderTable(); } });
-  els.nextPg.addEventListener('click', () => {
-    const pages = Math.max(1, Math.ceil((state.total||0)/state.per));
-    if (state.page<pages){ state.page++; renderTable(); }
+  function clearForm(){
+    lines.innerHTML=''; 
+    addLine();
+    $('#Note', root).value='';
+    $('#OutDate', root).value=todayStr();
+    $('#ProjectInput', root).value='';
+    $('#ContractorInput', root).value='';
+    $('#RequesterInput', root).value='';
+  }
+
+  // FAB behavior
+  const fab = $('#fab', root);
+  const fabMain = $('#fabMain', root);
+  const fabAdd = $('#fabAddBtn', root);
+  const fabSubmit = $('#fabSubmitBtn', root);
+
+  function toggleFab(){
+    const expanded = fab.classList.toggle('expanded');
+    fabMain.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  }
+  fabMain.addEventListener('click', toggleFab);
+  fabAdd.addEventListener('click', addLine);
+
+  fabSubmit.addEventListener('click', async ()=>{
+    setBtnLoading(fabSubmit, true);
+    const p = {
+      type:'OUT',
+      project: $('#ProjectInput', root).value.trim(),
+      contractor: $('#ContractorInput', root).value.trim(),
+      requester: $('#RequesterInput', root).value.trim(),
+      note: $('#Note', root).value.trim(),
+      date: $('#OutDate', root).value.trim(),
+      lines: collectLines('#outLines')
+    };
+    if (!p.lines.length){
+      setBtnLoading(fabSubmit,false); 
+      return toast(lang==='th'?'กรุณาเพิ่มรายการ':'Add at least one line');
+    }
+    try{
+      const res = await apiPost('submitMovementBulk', p);
+      if(res && res.ok){
+        toast((lang==='th'?'บันทึกแล้ว • เอกสาร ':'Saved • Doc ')+(res.docNo||''));
+        clearForm();
+      } else {
+        toast((res && res.message) || 'Error');
+      }
+    } catch{
+      toast(lang==='th'?'เกิดข้อผิดพลาดในการบันทึก':'Failed to submit');
+    } finally {
+      setBtnLoading(fabSubmit, false);
+      fab.classList.remove('expanded');
+      fabMain.setAttribute('aria-expanded','false');
+    }
   });
 
-  await doSearch();
+  // Header pickers
+  $('#ProjectInput', root).addEventListener('click', ()=>openPicker($('#ProjectInput', root),'projects', lang));
+  $('#ContractorInput', root).addEventListener('click', ()=>openPicker($('#ContractorInput', root),'contractors', lang));
+  $('#RequesterInput', root).addEventListener('click', ()=>openPicker($('#RequesterInput', root),'requesters', lang));
+
+  // Init
+  $('#OutDate', root).value=todayStr();
+  addLine();
 }
