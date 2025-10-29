@@ -323,17 +323,22 @@ export default async function mount({ root, lang }){
       if(!res||!res.ok||!res.doc) throw new Error(res?.message||'Not found');
       const d=res.doc;
 
-      const linesHtml=d.lines.map(li=>{
-        // Proportional sizing: item (flex:1), qty (fixed small), delete (smallest)
-        const itemEsc=esc(li.item);
-        const qtyEsc=esc(li.qty);
-        return `
-          <div class="row" data-item="${itemEsc}" style="display:flex;gap:.5rem;align-items:center;">
-            <input value="${itemEsc}" data-picker="materials" readonly style="flex:1;min-width:12rem"/>
-            <input type="number" step="any" value="${qtyEsc}" style="width:7rem"/>
-            <button class="btn small red" type="button" title="${lang==='th'?'ลบแถว':'Delete line'}">×</button>
-          </div>`;
-      }).join('');
+const linesHtml=d.lines.map(li=>{
+  // Proportional sizing: item (flex:1), qty (fixed small), delete (smallest)
+  const itemEsc=esc(li.item);
+  const qtyEsc=esc(li.qty);
+  return `
+    <div class="row" data-item="${itemEsc}" style="display:flex;align-items:center;gap:.4rem;">
+      <input value="${itemEsc}" data-picker="materials" readonly
+             style="flex:1;min-width:12rem;padding:.4rem .6rem;"/>
+      <input type="number" step="any" value="${qtyEsc}"
+             style="width:6rem;text-align:right;padding:.4rem .3rem;"/>
+      <button class="btn small red" type="button" title="${lang==='th'?'ลบแถว':'Delete line'}"
+              style="width:2.2rem;height:2.2rem;min-width:2.2rem;display:flex;align-items:center;justify-content:center;
+                     font-size:1rem;line-height:1;">×</button>
+    </div>`;
+}).join('');
+
 
       body.innerHTML = `
         <div class="meta" style="margin-bottom:.5rem;">${esc(d.ts)} • ${esc(d.project||'-')}</div>
@@ -356,11 +361,15 @@ export default async function mount({ root, lang }){
         row.className = 'row';
         row.style.cssText = 'display:flex;gap:.5rem;align-items:center;';
         row.setAttribute('data-item','');
-        row.innerHTML = `
-          <input value="" data-picker="materials" readonly style="flex:1;min-width:12rem"/>
-          <input type="number" step="any" value="0" style="width:7rem"/>
-          <button class="btn small red" type="button" title="${lang==='th'?'ลบแถว':'Delete line'}">×</button>
-        `;
+row.innerHTML = `
+  <input value="" data-picker="materials" readonly
+         style="flex:1;min-width:12rem;padding:.4rem .6rem;"/>
+  <input type="number" step="any" value="0"
+         style="width:6rem;text-align:right;padding:.4rem .3rem;"/>
+  <button class="btn small red" type="button" title="${lang==='th'?'ลบแถว':'Delete line'}"
+          style="width:2.2rem;height:2.2rem;min-width:2.2rem;display:flex;align-items:center;justify-content:center;
+                 font-size:1rem;line-height:1;">×</button>
+`;
         wrap.appendChild(row);
         bindPickerInputs(box, lang);
         const itemInput = row.querySelector('[data-picker="materials"]');
