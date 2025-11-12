@@ -1,20 +1,13 @@
-// tabs/out.js (v12.3-beta rev4)
-// OUT tab with a single medium-sized modal used for History and Edit pages (page-switching inside one overlay)
-// Flow:
-//   - Click 📜 History -> open modal (History page, not fullscreen).
-//   - Click ✎ on a row -> switch modal content to Edit page.
-//   - Click Save -> return to History page and refresh list.
-// UX sizing:
-//   - Desktop modal ~760px wide, ~84vh height (not full screen).
-//   - Mobile modal ~96vw x ~92vh (still not full screen).
-//   - Material picker (from shared.js) remains the smallest modal and stays on top (higher z-index).
+// tabs/out.js (v12.4)
+// OUT tab with grouped OUT history (one entry per DocNo) + clean edit modal
+// Works with new out_SearchHistory_ grouping API
 
 import {
   $, $$, STR, bindPickerInputs, openPicker,
   apiGet, apiPost, setBtnLoading, esc, toast, todayStr, stockBadge, clampList
 } from '../js/shared.js';
 
-/* ---------------- LINE BUILDER (for the main OUT form) ---------------- */
+/* ---------- build line for main OUT form ---------- */
 function OutLine(lang){
   const card=document.createElement('div');
   card.className='line';
@@ -85,10 +78,9 @@ function collectLines(rootSel){
   return out;
 }
 
-/* ---------------- MAIN MOUNT ---------------- */
+/* ---------- main mount ---------- */
 export default async function mount({ root, lang }){
   const S=STR[lang];
-
   root.innerHTML=`
     <section class="card glass">
       <h3>${S.outTitle}</h3>
@@ -102,9 +94,8 @@ export default async function mount({ root, lang }){
       </div>
       <div class="row"><div><label>${S.note}</label><input id="Note" placeholder="${lang==='th'?'ถ้ามี':'Optional'}" /></div></div>
       <div class="lines" id="outLines"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-top:.25rem;">
+      <div style="text-align:right;margin-top:.25rem;">
         <button class="btn small" id="openOutHistoryBtn" type="button">📜 ${lang==='th'?'ประวัติการจ่ายออก':'OUT History'}</button>
-        <span class="meta">${lang==='th'?'หน้าต่างจะไม่เต็มจอ':'Modal is not fullscreen'}</span>
       </div>
     </section>
 
@@ -112,23 +103,19 @@ export default async function mount({ root, lang }){
       <div class="mini" id="fabSubmitWrap" aria-hidden="true">
         <div class="label">${S.btnSubmit}</div>
         <button class="btn small primary" id="fabSubmitBtn" type="button">
-          <span class="btn-label">💾</span>
-          <span class="btn-spinner"><span class="spinner"></span></span>
+          <span class="btn-label">💾</span><span class="btn-spinner"><span class="spinner"></span></span>
         </button>
       </div>
       <div class="mini" id="fabAddWrap" aria-hidden="true">
         <div class="label">${S.btnAdd}</div>
         <button class="btn small" id="fabAddBtn" type="button">
-          <span class="btn-label">＋</span>
-          <span class="btn-spinner"><span class="spinner"></span></span>
+          <span class="btn-label">＋</span><span class="btn-spinner"><span class="spinner"></span></span>
         </button>
       </div>
-      <button class="fab-main" id="fabMain" aria-expanded="false" aria-controls="fab">
-        <span class="icon">＋</span>
-      </button>
+      <button class="fab-main" id="fabMain" aria-expanded="false" aria-controls="fab"><span class="icon">＋</span></button>
     </div>
 
-    <!-- SINGLE MODAL OVERLAY (used for both History and Edit by page-switching) -->
+    <!-- Reusable medium modal -->
     <div id="outModalOverlay" aria-hidden="true"
          style="position:fixed;inset:0;z-index:1950;display:none;align-items:center;justify-content:center;
                 background:rgba(15,18,23,0.12);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);pointer-events:none;">
@@ -148,7 +135,29 @@ export default async function mount({ root, lang }){
     </div>
   `;
 
-  /* ---------------- BASIC FORM ---------------- */
+  /* ---------- local styles for edit row proportions ---------- */
+  const style = document.createElement('style');
+  style.textContent = `
+    #outModalBox .out-edit .row { display:flex; align-items:center; gap:.4rem; }
+    #outModalBox .out-edit .item { flex:1 1 auto; min-width:12rem; padding:.4rem .6rem; }
+    #outModalBox .out-edit .qty { flex:0 0 6rem; width:6rem; text-align:right; padding:.4rem .3rem; }
+    #outModalBox .out-edit .icon-btn {
+      flex:0 0 auto;
+      width:2.0rem;height:2.0rem;min-width:2.0rem !important;
+      padding:0 !important;display:flex;align-items:center;justify-content:center;
+      line-height:1;font-size:1rem;
+    }
+    #outModalBox .picker-list .rowitem {
+      border-bottom:1px solid var(--border-weak);
+      padding-bottom:.5rem;margin-bottom:.5rem;
+    }
+    #outModalBox .picker-list .rowitem:last-child {
+      border-bottom:none;margin-bottom:0;
+    }
+  `;
+  root.appendChild(style);
+
+  /* ---------- base form logic ---------- */
   const lines=$('#outLines',root);
   function addLine(){ lines.appendChild(OutLine(lang)); bindPickerInputs(root,lang); }
   function clearForm(){
@@ -159,18 +168,13 @@ export default async function mount({ root, lang }){
 
   const fab=$('#fab',root); const fabMain=$('#fabMain',root);
   const fabAdd=$('#fabAddBtn',root); const fabSubmit=$('#fabSubmitBtn',root);
-
-  function toggleFab(){
-    const expanded=fab.classList.toggle('expanded');
-    fabMain.setAttribute('aria-expanded',expanded?'true':'false');
-  }
+  function toggleFab(){ const expanded=fab.classList.toggle('expanded'); fabMain.setAttribute('aria-expanded',expanded?'true':'false'); }
   fabMain.addEventListener('click',toggleFab);
   fabAdd.addEventListener('click',addLine);
 
   fabSubmit.addEventListener('click',async()=>{
     setBtnLoading(fabSubmit,true);
-    const p={
-      type:'OUT',
+    const p={type:'OUT',
       project:$('#ProjectInput',root).value.trim(),
       contractor:$('#ContractorInput',root).value.trim(),
       requester:$('#RequesterInput',root).value.trim(),
@@ -178,23 +182,15 @@ export default async function mount({ root, lang }){
       date:$('#OutDate',root).value.trim(),
       lines:collectLines('#outLines')
     };
-    if(!p.lines.length){
-      setBtnLoading(fabSubmit,false);
-      return toast(lang==='th'?'กรุณาเพิ่มรายการ':'Add at least one line');
-    }
+    if(!p.lines.length){ setBtnLoading(fabSubmit,false); return toast(lang==='th'?'กรุณาเพิ่มรายการ':'Add at least one line'); }
     try{
       const res=await apiPost('submitMovementBulk',p);
       if(res&&res.ok){
         toast((lang==='th'?'บันทึกแล้ว • เอกสาร ':'Saved • Doc ')+(res.docNo||''));
         clearForm(); if(modalState.page==='history') await loadHistoryIntoModal();
       }else toast((res&&res.message)||'Error');
-    }catch{
-      toast(lang==='th'?'เกิดข้อผิดพลาดในการบันทึก':'Failed to submit');
-    }finally{
-      setBtnLoading(fabSubmit,false);
-      fab.classList.remove('expanded');
-      fabMain.setAttribute('aria-expanded','false');
-    }
+    }catch{ toast(lang==='th'?'เกิดข้อผิดพลาดในการบันทึก':'Failed to submit'); }
+    finally{ setBtnLoading(fabSubmit,false); fab.classList.remove('expanded'); fabMain.setAttribute('aria-expanded','false'); }
   });
 
   $('#ProjectInput',root).addEventListener('click',()=>openPicker($('#ProjectInput',root),'projects',lang));
@@ -204,7 +200,7 @@ export default async function mount({ root, lang }){
   $('#OutDate',root).value=todayStr();
   addLine();
 
-  /* ---------------- MODAL (ONE OVERLAY, TWO PAGES) ---------------- */
+  /* ---------- modal logic ---------- */
   const openHistoryBtn=$('#openOutHistoryBtn',root);
   const overlay=$('#outModalOverlay',root);
   const box=$('#outModalBox',root);
@@ -213,193 +209,133 @@ export default async function mount({ root, lang }){
   const hdrClose=$('#outModalCloseBtn',root);
   const body=$('#outModalBody',root);
   const ftr=$('#outModalFooter',root);
-
-  const modalState = { page:'history', currentDocNo:null };
+  const modalState={page:'history',currentDocNo:null};
 
   function openModal(){
-    // Responsive sizing (not fullscreen)
     if(window.innerWidth<769){
-      box.style.width='96vw';
-      box.style.height='92vh';
-      box.style.maxWidth='96vw';
-      box.style.maxHeight='92vh';
-      box.style.borderRadius='14px';
+      box.style.width='96vw'; box.style.height='92vh';
     }else{
-      box.style.width='760px';
-      box.style.height='84vh';
-      box.style.maxWidth='760px';
-      box.style.maxHeight='84vh';
-      box.style.borderRadius='18px';
+      box.style.width='760px'; box.style.height='84vh';
     }
-    overlay.style.display='flex';
-    overlay.style.pointerEvents='auto';
-    overlay.setAttribute('aria-hidden','false');
+    overlay.style.display='flex'; overlay.style.pointerEvents='auto'; overlay.setAttribute('aria-hidden','false');
   }
   function closeModal(){
-    overlay.style.display='none';
-    overlay.style.pointerEvents='none';
-    overlay.setAttribute('aria-hidden','true');
-    modalState.page='history';
-    modalState.currentDocNo=null;
-    body.innerHTML='';
-    ftr.innerHTML='';
-    hdrBack.style.display='none';
-    hdrTitle.textContent = (lang==='th'?'ประวัติการจ่ายออก':'OUT History');
+    overlay.style.display='none'; overlay.style.pointerEvents='none'; overlay.setAttribute('aria-hidden','true');
+    modalState.page='history'; modalState.currentDocNo=null; body.innerHTML=''; ftr.innerHTML=''; hdrBack.style.display='none';
+    hdrTitle.textContent=(lang==='th'?'ประวัติการจ่ายออก':'OUT History');
+    body.classList.remove('out-edit');
   }
-
   overlay.addEventListener('click',e=>{ if(e.target===overlay) closeModal(); });
   hdrClose.addEventListener('click',closeModal);
-  hdrBack.addEventListener('click',async()=>{
-    // Back to history page
-    modalState.page='history';
-    modalState.currentDocNo=null;
-    hdrBack.style.display='none';
-    hdrTitle.textContent = (lang==='th'?'ประวัติการจ่ายออก':'OUT History');
-    await loadHistoryIntoModal();
-  });
+  hdrBack.addEventListener('click',()=>{ modalState.page='history'; modalState.currentDocNo=null; hdrBack.style.display='none'; hdrTitle.textContent=(lang==='th'?'ประวัติการจ่ายออก':'OUT History'); body.classList.remove('out-edit'); loadHistoryIntoModal(); });
+  openHistoryBtn.addEventListener('click',()=>{ modalState.page='history'; openModal(); loadHistoryIntoModal(); });
 
-  openHistoryBtn.addEventListener('click', async ()=>{
-    modalState.page='history';
-    openModal();
-    await loadHistoryIntoModal();
-  });
-
+  /* ---------- history loader (grouped) ---------- */
   async function loadHistoryIntoModal(){
-    // Header/footer for history page
-    ftr.innerHTML='';
-    body.innerHTML='';
-    for(let i=0;i<6;i++){
-      const r=document.createElement('div'); r.className='skeleton-row';
-      r.style.height='38px'; r.style.margin='4px 0';
-      body.appendChild(r);
-    }
+    ftr.innerHTML=''; body.innerHTML='';
+    for(let i=0;i<5;i++){const r=document.createElement('div');r.className='skeleton-row';r.style.height='38px';r.style.margin='4px 0';body.appendChild(r);}
     try{
-      const res=await apiPost('out_SearchHistory',{limit:80});
+      const res=await apiPost('out_SearchHistory',{limit:200});
       body.innerHTML='';
-      const listWrap=document.createElement('div');
-      listWrap.className='picker-list';
+      const listWrap=document.createElement('div'); listWrap.className='picker-list';
       (res.rows||[]).forEach(r=>{
-        const item=document.createElement('div');
-        item.className='rowitem';
-        item.style.flexDirection='column';
+        const item=document.createElement('div'); item.className='rowitem'; item.style.flexDirection='column';
+        const itemSummary=`${esc(r.itemSummary||'')}`;
+        const itemInfo=`${lang==='th'?'รวมจำนวน':'Total'} ${r.totalQty} (${r.itemCount} ${lang==='th'?'รายการ':'items'})`;
         item.innerHTML=`
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.3rem;">
             <strong>${esc(r.doc)} • ${esc(r.project||'-')}</strong>
             <button class="btn small" data-doc="${esc(r.doc)}">✎</button>
           </div>
           <div class="meta">${esc(r.ts)} • 👷 ${esc(r.contractor||'-')} • 🙋 ${esc(r.requester||'-')}</div>
-          <div class="meta">${lang==='th'?'รายการ':'Item'}: ${esc(r.item)} (${esc(r.qty)})</div>
-        `;
+          <div class="meta">${itemSummary}</div>
+          <div class="meta">${itemInfo}</div>`;
         listWrap.appendChild(item);
       });
-      body.appendChild(listWrap);
-      clampList(listWrap);
-      body.querySelectorAll('button[data-doc]').forEach(btn=>{
-        btn.addEventListener('click',()=>openEditPage(btn.dataset.doc));
-      });
-    }catch{
-      body.innerHTML=`<div class="rowitem"><div class="meta" style="color:#b91c1c">${lang==='th'?'โหลดข้อมูลไม่สำเร็จ':'Failed to load data'}</div></div>`;
-    }
+      if(!(res.rows&&res.rows.length)){body.innerHTML=`<div class="meta" style="text-align:center;padding:.75rem;color:#777">${lang==='th'?'ไม่พบข้อมูลการจ่ายออก':'No OUT history found'}</div>`;return;}
+      body.appendChild(listWrap); clampList(listWrap);
+      body.querySelectorAll('button[data-doc]').forEach(btn=>{btn.addEventListener('click',()=>openEditPage(btn.dataset.doc));});
+    }catch(err){console.warn('loadHistoryIntoModal error',err);body.innerHTML=`<div class="meta" style="color:#b91c1c;padding:.75rem;">${lang==='th'?'โหลดข้อมูลไม่สำเร็จ':'Failed to load data'}</div>`;}
   }
 
+  /* ---------- edit page ---------- */
   async function openEditPage(docNo){
     const docTrimmed=(docNo||'').toString().trim();
     if(!docTrimmed) return toast(lang==='th'?'ไม่พบเลขที่เอกสาร':'Missing document number');
-
-    // Switch header for edit page
-    modalState.page='edit';
-    modalState.currentDocNo=docTrimmed;
-    hdrBack.style.display='inline-block';
-    hdrTitle.textContent = (lang==='th'?'แก้ไขเอกสาร ':'Edit Document ') + docTrimmed;
-
-    // Prepare body
-    body.innerHTML = `<div class="meta">${lang==='th'?'กำลังโหลด...':'Loading...'}</div>`;
-    ftr.innerHTML = `
-      <button class="btn primary" id="saveOutEdit">${S.save}</button>
-    `;
-
+    modalState.page='edit'; modalState.currentDocNo=docTrimmed; hdrBack.style.display='inline-block';
+    hdrTitle.textContent=(lang==='th'?'แก้ไขเอกสาร ':'Edit Document ')+docTrimmed;
+    body.classList.add('out-edit');
+    body.innerHTML=`<div class="meta">${lang==='th'?'กำลังโหลด...':'Loading...'}</div>`;
+    ftr.innerHTML=`<button class="btn primary" id="saveOutEdit">${S.save}</button>`;
     try{
-      const res=await apiPost('out_GetDoc',{ docNo: docTrimmed });
+      const res=await apiPost('out_GetDoc',{docNo:docTrimmed});
       if(!res||!res.ok||!res.doc) throw new Error(res?.message||'Not found');
       const d=res.doc;
-
-const linesHtml=d.lines.map(li=>{
-  // Proportional sizing: item (flex:1), qty (fixed small), delete (smallest)
-  const itemEsc=esc(li.item);
-  const qtyEsc=esc(li.qty);
-  return `
-    <div class="row" data-item="${itemEsc}" style="display:flex;align-items:center;gap:.4rem;">
-      <input value="${itemEsc}" data-picker="materials" readonly
-             style="flex:1;min-width:12rem;padding:.4rem .6rem;"/>
-      <input type="number" step="any" value="${qtyEsc}"
-             style="width:6rem;text-align:right;padding:.4rem .3rem;"/>
-      <button class="btn small red" type="button" title="${lang==='th'?'ลบแถว':'Delete line'}"
-              style="width:2.2rem;height:2.2rem;min-width:2.2rem;display:flex;align-items:center;justify-content:center;
-                     font-size:1rem;line-height:1;">×</button>
-    </div>`;
-}).join('');
-
-
-      body.innerHTML = `
+      const linesHtml=d.lines.map(li=>{
+        const itemEsc=esc(li.item),qtyEsc=esc(li.qty);
+        return `<div class="row" data-item="${itemEsc}">
+          <input value="${itemEsc}" data-picker="materials" readonly class="item"/>
+          <input type="number" step="any" value="${qtyEsc}" class="qty"/>
+          <button class="btn small red icon-btn" type="button" title="${lang==='th'?'ลบแถว':'Delete line'}">×</button>
+        </div>`;
+      }).join('');
+      body.innerHTML=`
         <div class="meta" style="margin-bottom:.5rem;">${esc(d.ts)} • ${esc(d.project||'-')}</div>
         <div class="lines" id="outEditLines">${linesHtml}</div>
-        <div class="row" style="margin-top:.75rem;justify-content:flex-start;">
+        <div class="row" style="margin-top:.75rem;">
           <button class="btn small" id="addEditLine" type="button">＋ ${lang==='th'?'เพิ่มแถว':'Add line'}</button>
         </div>
       `;
 
-      // Bind pickers and actions
+      // Bind picker clicks for materials
       bindPickerInputs(box, lang);
       $$('#outEditLines [data-picker="materials"]', box).forEach(inp=>{
         inp.addEventListener('click', ()=>openPicker(inp,'materials', lang));
       });
-      $$('#outEditLines .row button.red', box).forEach(b=>b.onclick=()=>b.closest('.row').remove());
+      // Delete row
+      $$('#outEditLines .row .icon-btn', box).forEach(b=>b.onclick=()=>b.closest('.row').remove());
 
+      // Add line
       $('#addEditLine', box).onclick = () => {
         const wrap = $('#outEditLines', box);
         const row = document.createElement('div');
         row.className = 'row';
-        row.style.cssText = 'display:flex;gap:.5rem;align-items:center;';
-        row.setAttribute('data-item','');
-row.innerHTML = `
-  <input value="" data-picker="materials" readonly
-         style="flex:1;min-width:12rem;padding:.4rem .6rem;"/>
-  <input type="number" step="any" value="0"
-         style="width:6rem;text-align:right;padding:.4rem .3rem;"/>
-  <button class="btn small red" type="button" title="${lang==='th'?'ลบแถว':'Delete line'}"
-          style="width:2.2rem;height:2.2rem;min-width:2.2rem;display:flex;align-items:center;justify-content:center;
-                 font-size:1rem;line-height:1;">×</button>
-`;
+        row.innerHTML = `
+          <input value="" data-picker="materials" readonly class="item"/>
+          <input type="number" step="any" value="0" class="qty"/>
+          <button class="btn small red icon-btn" type="button" title="${lang==='th'?'ลบแถว':'Delete line'}">×</button>
+        `;
         wrap.appendChild(row);
         bindPickerInputs(box, lang);
         const itemInput = row.querySelector('[data-picker="materials"]');
         itemInput.addEventListener('click', ()=>openPicker(itemInput,'materials', lang));
-        row.querySelector('button.red').onclick = () => row.remove();
+        row.querySelector('.icon-btn').onclick = () => row.remove();
         itemInput.click(); // open picker immediately
       };
 
-      // Save handler
-      $('#saveOutEdit', ftr.parentElement).onclick = async ()=>{
+      // Save
+      $('#saveOutEdit', ftr).onclick = async ()=>{
         const rows = $$('#outEditLines .row', box);
         const lines = [];
         rows.forEach(r=>{
           const item = (r.querySelector('[data-picker="materials"]')?.value || '').trim();
-          const qty  = Number(r.querySelector('input[type="number"]')?.value || 0) || 0;
+          const qty  = Number(r.querySelector('input.qty')?.value || 0) || 0;
           if(item) lines.push({ name:item, qty });
         });
         if(!lines.length) return toast(lang==='th'?'ต้องมีอย่างน้อย 1 รายการ':'At least one line required');
 
-        const btn=$('#saveOutEdit', ftr.parentElement);
+        const btn=$('#saveOutEdit', ftr);
         setBtnLoading(btn, true);
         try{
           const res2=await apiPost('out_UpdateDoc',{ docNo: docTrimmed, lines });
           if(res2 && res2.ok){
             toast(lang==='th'?'บันทึกแล้ว':'Saved');
-            // Return to history page and refresh
+            // back to history and refresh
             modalState.page='history';
             modalState.currentDocNo=null;
             hdrBack.style.display='none';
-            hdrTitle.textContent = (lang==='th'?'ประวัติการจ่ายออก':'OUT History');
+            hdrTitle.textContent=(lang==='th'?'ประวัติการจ่ายออก':'OUT History');
+            body.classList.remove('out-edit');
             await loadHistoryIntoModal();
           }else{
             toast(res2?.message || 'Error');
