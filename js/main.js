@@ -13,6 +13,8 @@ const TAB_MODULES = {
   in:        () => import('../tabs/in.js'),
   adjust:    () => import('../tabs/adjust.js'),
   purchase:  () => import('../tabs/purchase.js'),
+  out_history: () => import('../tabs/out_history.js';
+
 };
 
 let LANG = currentLang();
