@@ -1,51 +1,105 @@
-// main.js (Public v1.0) — Optimized router and tab system
-import mountDashboard from '../tabs/dashboard.js';
-import mountIn from '../tabs/in.js';
-import mountOut from '../tabs/out.js';
-import mountPurchase from '../tabs/purchase.js';
-import mountAdjust from '../tabs/adjust.js';
-import mountOutHistory from '../tabs/out_history.js';
-import { $, $$ } from '../js/shared.js';
+// js/main.js
+// Adds cache cleanup, refresh button spinner, proper dashboard mounting, and tab routing.
 
-const TABS={
-  dashboard:mountDashboard,
-  in:mountIn,
-  out:mountOut,
-  purchase:mountPurchase,
-  adjust:mountAdjust,
-  out_history:mountOutHistory
+import {
+  $, $$, STR, applyLangTexts, preloadLookups, bindPickerInputs,
+  toast, currentLang, cleanOldCache, setBtnLoading
+} from './shared.js';
+
+// Lazy import tab modules
+const TAB_MODULES = {
+  dashboard: () => import('../tabs/dashboard.js'),
+  out:       () => import('../tabs/out.js'),
+  in:        () => import('../tabs/in.js'),
+  adjust:    () => import('../tabs/adjust.js'),
+  purchase:  () => import('../tabs/purchase.js'),
+  // NEW:
+  out_history: () => import('../tabs/out_history.js'),
 };
 
-let currentTab=null;
-let lang='th';
+let LANG = currentLang();
+let currentTab = 'dashboard';
 
-export async function loadTab(tab){
-  try{
-    const fn=TABS[tab]; if(!fn) throw new Error(`Unknown tab: ${tab}`);
-    $$('[data-tab]').forEach(b=>b.classList.remove('active'));
-    const btn=$(`[data-tab="${tab}"]`); if(btn) btn.classList.add('active');
-    const view=$('#view');
-    view.innerHTML='<div class="meta" style="padding:1rem;">Loading...</div>';
-    await fn({root:view,lang});
-    currentTab=tab;
-    localStorage.setItem('lastTab',tab);
-  }catch(err){
-    console.error(err);
-    $('#view').innerHTML=`<div class="meta" style="color:red;padding:1rem;">Error: ${err.message}</div>`;
-  }
+async function mountTab(tabKey) {
+  const loader = TAB_MODULES[tabKey];
+  if (!loader) return;
+  const mod = await loader();
+  const root = $('#view');
+  await mod.default({ root, lang: LANG });
+  bindPickerInputs(root, LANG);
 }
 
-export function initNav(){
-  $$('[data-tab]').forEach(btn=>{
-    btn.addEventListener('click',()=>loadTab(btn.dataset.tab));
+async function init() {
+  // 0) Clean stale cache first (keeps fresh, drops old)
+  cleanOldCache();
+
+  // Language toggle
+  $('#lang-en')?.addEventListener('click', () => { LANG = 'en'; document.documentElement.lang = 'en'; onLangChange(); });
+  $('#lang-th')?.addEventListener('click', () => { LANG = 'th'; document.documentElement.lang = 'th'; onLangChange(); });
+
+  // Tabs
+  $$('.tabs button').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const key = btn.getAttribute('data-tab');
+      if (!key) return;
+      $$('.tabs button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentTab = key;
+      await mountTab(currentTab);
+    });
   });
-  const last=localStorage.getItem('lastTab');
-  loadTab(last&&TABS[last]?last:'dashboard');
+
+  // Programmatic tab switch (used by OUT tab's History button)
+  window.addEventListener('switch-tab', async (e)=>{
+    const key = e.detail;
+    if (!key || !TAB_MODULES[key]) return;
+    const btn = $(`.tabs button[data-tab="${key}"]`);
+    if (btn) {
+      $$('.tabs button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+    currentTab = key;
+    await mountTab(currentTab);
+  });
+
+  // 1) Preload lookups BEFORE first mount
+  try {
+    await preloadLookups();
+  } catch {
+    toast(LANG === 'th' ? 'โหลดข้อมูลเริ่มต้นไม่สำเร็จ กำลังใช้ข้อมูลเก่า' : 'Failed to load lookups; using cached data');
+  }
+
+  // 2) Apply language and bind pickers
+  applyLangTexts(LANG);
+  bindPickerInputs(document, LANG);
+
+  // 3) Manual refresh button with spinner
+  const refreshBtn = $('#refreshDataBtn');
+  refreshBtn?.addEventListener('click', async ()=>{
+    try {
+      setBtnLoading(refreshBtn, true);
+      // remove only our cached keys
+      const keys = [];
+      for (let i=0;i<localStorage.length;i++){
+        const k = localStorage.key(i);
+        if(k && k.startsWith('cache:')) keys.push(k);
+      }
+      keys.forEach(k=>localStorage.removeItem(k));
+      await preloadLookups(true); // force fresh
+      toast(LANG==='th'?'รีเฟรชข้อมูลแล้ว':'Data refreshed');
+    } finally {
+      setBtnLoading(refreshBtn, false);
+    }
+  });
+
+  // 4) Mount default tab
+  await mountTab(currentTab);
 }
 
-// listen for cross-tab switch
-window.addEventListener('switch-tab',e=>{
-  const name=e.detail; if(name) loadTab(name);
-});
+function onLangChange() {
+  applyLangTexts(LANG);
+  bindPickerInputs(document, LANG);
+  mountTab(currentTab);
+}
 
-document.addEventListener('DOMContentLoaded',initNav);
+document.addEventListener('DOMContentLoaded', init);
