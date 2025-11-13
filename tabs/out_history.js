@@ -1,19 +1,19 @@
-// tabs/out_history.js (Public v1.1)
-// OUT History tab with outline list: Date, Contractor, Requester, Project
-// Detail/Edit overlay reuses OUT line layout with live stock badges.
+// tabs/out_history.js (Public v1.2 - outlined list)
+// OUT History tab with a themed, outlined card list (Date OUT, Contractor, Requester, Project only).
+// Detail/Edit overlay reuses the OUT form line layout with live stock badges.
 
 import {
   $, $$, STR, bindPickerInputs, openPicker,
   apiGet, apiPost, setBtnLoading, esc, toast, stockBadge
 } from '../js/shared.js';
 
-// Reuse line UI & stock behavior from OUT tab
+/* ---------- Reuse OUT line UI & stock behavior ---------- */
 function OutLine(lang){
   const card=document.createElement('div');
   card.className='line';
 
   const name=document.createElement('input');
-  name.placeholder=(lang==='th' ? 'พิมพ์เพื่อค้นหา…' : 'Type to search…');
+  name.placeholder=(lang==='th'?'พิมพ์เพื่อค้นหา…':'Type to search…');
   name.readOnly=true;
   name.setAttribute('data-picker','materials');
 
@@ -35,20 +35,17 @@ function OutLine(lang){
   const rm=document.createElement('button'); rm.type='button'; rm.className='btn small'; rm.textContent='×'; rm.onclick=()=>card.remove();
   actions.appendChild(rm);
 
-  // Layout mirrors OUT tab (name, qty in grid)
   const grid=document.createElement('div'); grid.className='grid';
   grid.appendChild(name); grid.appendChild(qty);
 
   card.appendChild(grid); card.appendChild(meta); card.appendChild(actions);
 
-  // Picker + live stock badge
   name.addEventListener('click', ()=>openPicker(name,'materials', lang));
   name.addEventListener('change', async ()=>{
     const v=name.value.trim();
-    const old=badge;
     const spin=document.createElement('span'); spin.className='badge';
     spin.innerHTML='<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>';
-    meta.replaceChild(spin, old); badge=spin;
+    meta.replaceChild(spin, badge); badge=spin;
     try{
       const res=await apiGet('getCurrentStock',{material:v});
       const n=(res&&res.ok)?Number(res.stock):null;
@@ -63,19 +60,20 @@ function OutLine(lang){
   return card;
 }
 
+/* ---------- Mount tab ---------- */
 export default async function mount({ root, lang }){
   const S=STR[lang];
 
-  root.innerHTML = `
+  root.innerHTML=`
     <section class="card glass">
-      <h3>📜 ${lang==='th'?'ประวัติการจ่ายออก (OUT)':'OUT History'}</h3>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem;">
-        <input id="histSearchText" placeholder="${lang==='th'?'ค้นหา...':'Search...'}" style="min-width:14rem"/>
-        <button class="btn small" id="histReload">⟲ ${lang==='th'?'โหลดใหม่':'Reload'}</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;">
+        <h3 style="margin:0;">📜 ${lang==='th'?'ประวัติการจ่ายออก (OUT)':'OUT History'}</h3>
+        <div style="display:flex;gap:.5rem;align-items:center;">
+          <input id="histSearchText" placeholder="${lang==='th'?'ค้นหา...':'Search...'}" style="min-width:16rem"/>
+          <button class="btn small" id="histReload">⟲ ${lang==='th'?'โหลดใหม่':'Reload'}</button>
+        </div>
       </div>
-      <div id="histTableWrap" class="table-wrap" style="margin-top:.5rem;">
-        <div class="meta">${lang==='th'?'กำลังโหลด...':'Loading...'}</div>
-      </div>
+      <div id="histListWrap" style="margin-top:.75rem;"></div>
     </section>
 
     <!-- Detail/Edit overlay -->
@@ -97,7 +95,86 @@ export default async function mount({ root, lang }){
     </div>
   `;
 
-  const tableWrap=$('#histTableWrap',root);
+  /* ---------- Scoped styles for outlined list ---------- */
+  const style=document.createElement('style');
+  style.textContent=`
+    .hist-list {
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:.65rem;
+    }
+    @media (min-width: 900px){
+      .hist-list { grid-template-columns: 1fr 1fr; }
+    }
+    .doc-card {
+      border:1px solid var(--border-weak);
+      border-radius:14px;
+      background: var(--glass,#fff);
+      box-shadow: var(--shadow-s, 0 1px 2px rgba(0,0,0,.04));
+      padding:.75rem .9rem;
+      display:flex;
+      gap:.8rem;
+      align-items:flex-start;
+      transition: box-shadow .15s ease, border-color .15s ease, transform .05s ease;
+      cursor:pointer;
+    }
+    .doc-card:hover {
+      border-color: var(--border,#ddd);
+      box-shadow: var(--shadow-m,0 6px 16px rgba(0,0,0,.08));
+    }
+    .doc-card:active { transform: translateY(1px); }
+
+    .doc-date {
+      min-width: 88px;
+      display:flex; align-items:center; justify-content:center;
+      font-variant-numeric: tabular-nums;
+      padding:.35rem .55rem;
+      border:1px dashed var(--border-weak);
+      border-radius:10px;
+      background: #fafafa;
+      color:#333;
+    }
+
+    .doc-main {
+      flex:1 1 auto;
+      min-width:0;
+      display:flex;
+      flex-direction:column;
+      gap:.35rem;
+    }
+
+    .doc-topline {
+      display:flex; align-items:center; justify-content:space-between; gap:.5rem;
+      font-weight:600;
+    }
+    .doc-topline .docno {
+      color:#111;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+
+    .chip-row {
+      display:flex; flex-wrap:wrap; gap:.4rem;
+    }
+    .chip {
+      border:1px solid var(--border-weak);
+      padding:.2rem .5rem;
+      border-radius:999px;
+      background:#fff;
+      font-size:.85rem;
+      color:#333;
+      max-width:100%;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .chip b { font-weight:600; margin-right:.35rem; color:#222; }
+
+    .doc-meta {
+      font-size:.85rem; color:#666;
+    }
+  `;
+  root.appendChild(style);
+
+  // elements
+  const listWrap=$('#histListWrap',root);
   const overlay=$('#histOverlay',root);
   const box=$('#histBox',root);
   const body=$('#histBody',root);
@@ -106,52 +183,75 @@ export default async function mount({ root, lang }){
   const saveBtn=$('#histSave',root);
 
   closeBtn.onclick=()=>{ overlay.style.display='none'; };
+
   $('#histReload',root).onclick=()=>loadHistory();
   $('#histSearchText',root).onkeydown=(e)=>{ if(e.key==='Enter') loadHistory(); };
 
+  /* ---------- Load + render outlined cards ---------- */
   async function loadHistory(){
-    tableWrap.innerHTML=`<div class="meta">${lang==='th'?'กำลังโหลด...':'Loading...'}</div>`;
+    listWrap.innerHTML=`<div class="meta">${lang==='th'?'กำลังโหลด...':'Loading...'}</div>`;
     try{
       const res=await apiPost('out_SearchHistory',{limit:0});
       const rows=Array.isArray(res.rows)?res.rows:[];
+      const q=($('#histSearchText',root)?.value||'').toLowerCase().trim();
 
-      // Outline table: Date, Contractor, Requester, Project
-      const thead = `
-        <thead>
-          <tr>
-            <th>${lang==='th'?'วันที่จ่ายออก':'Date OUT'}</th>
-            <th>${lang==='th'?'ผู้รับเหมา':'Contractor'}</th>
-            <th>${lang==='th'?'ผู้ขอเบิก':'Requester'}</th>
-            <th>${lang==='th'?'โครงการ':'Project'}</th>
-          </tr>
-        </thead>`;
+      const filtered = q
+        ? rows.filter(r=>{
+            const blob=[r.doc,r.ts,r.project,r.contractor,r.requester].join(' ').toLowerCase();
+            return blob.includes(q);
+          })
+        : rows;
 
-      const tbody = `
-        <tbody>
-          ${rows.map(r=>`
-            <tr class="click-row" data-doc="${esc(r.doc)}" style="cursor:pointer;">
-              <td>${esc(r.ts||'')}</td>
-              <td>${esc(r.contractor||'-')}</td>
-              <td>${esc(r.requester||'-')}</td>
-              <td>${esc(r.project||'-')}</td>
-            </tr>
-          `).join('')}
-        </tbody>`;
-
-      tableWrap.innerHTML = `
-        <div style="overflow:auto">
-          <table class="mini" style="width:100%;border-collapse:collapse;">
-            ${thead}${tbody}
-          </table>
+      if(!filtered.length){
+        listWrap.innerHTML = `<div class="meta" style="text-align:center;color:#777;padding:.75rem">
+          ${lang==='th'?'ไม่พบข้อมูล':'No data'}
         </div>`;
+        return;
+      }
 
-      $$('.click-row',tableWrap).forEach(tr=>{ tr.onclick=()=>openDoc(tr.dataset.doc); });
+      const grid=document.createElement('div');
+      grid.className='hist-list';
+
+      filtered.forEach(r=>{
+        const card=document.createElement('div');
+        card.className='doc-card';
+        card.setAttribute('data-doc', r.doc);
+
+        // Left: date badge
+        const left=document.createElement('div');
+        left.className='doc-date';
+        left.textContent = r.ts || '';
+
+        // Right: info
+        const right=document.createElement('div');
+        right.className='doc-main';
+        right.innerHTML = `
+          <div class="doc-topline">
+            <div class="docno">${esc(r.doc||'')}</div>
+            <div class="doc-meta">${esc(r.project||'-')}</div>
+          </div>
+          <div class="chip-row">
+            <div class="chip"><b>${lang==='th'?'ผู้รับเหมา':'Contractor'}:</b> ${esc(r.contractor||'-')}</div>
+            <div class="chip"><b>${lang==='th'?'ผู้ขอเบิก':'Requester'}:</b> ${esc(r.requester||'-')}</div>
+            <div class="chip"><b>${lang==='th'?'โครงการ':'Project'}:</b> ${esc(r.project||'-')}</div>
+          </div>
+        `;
+
+        card.appendChild(left);
+        card.appendChild(right);
+        card.addEventListener('click',()=>openDoc(r.doc));
+        grid.appendChild(card);
+      });
+
+      listWrap.innerHTML='';
+      listWrap.appendChild(grid);
     }catch(err){
-      console.warn('loadHistory error:',err);
-      tableWrap.innerHTML=`<div class="meta" style="color:#b91c1c">${lang==='th'?'โหลดไม่สำเร็จ':'Failed to load'}</div>`;
+      console.warn('loadHistory error:', err);
+      listWrap.innerHTML = `<div class="meta" style="color:#b91c1c">${lang==='th'?'โหลดไม่สำเร็จ':'Failed to load'}</div>`;
     }
   }
 
+  /* ---------- Open detail/edit overlay ---------- */
   async function openDoc(docNo){
     overlay.style.display='flex';
     title.textContent=`${lang==='th'?'แก้ไขเอกสาร':'Edit Document'} ${docNo}`;
@@ -163,7 +263,7 @@ export default async function mount({ root, lang }){
       if(!res||!res.ok||!res.doc) throw new Error(res?.message||'Not found');
       const d=res.doc;
 
-      // Build same lines layout as OUT tab (with stock badges)
+      // Build same lines UI as OUT tab
       const linesWrap=document.createElement('div'); linesWrap.className='lines';
       (d.lines||[]).forEach(li=>{
         const card=OutLine(lang);
@@ -198,7 +298,7 @@ export default async function mount({ root, lang }){
         const c=OutLine(lang); wrap.appendChild(c); bindPickerInputs(box,lang);
         const i=c.querySelector('input[data-picker="materials"]');
         i.addEventListener('click', ()=>openPicker(i,'materials',lang));
-        i.click(); // open immediately
+        i.click(); // open picker immediately
       };
 
       saveBtn.onclick = async ()=>{
@@ -228,11 +328,12 @@ export default async function mount({ root, lang }){
       };
 
     }catch(err){
-      console.warn('openDoc error:',err);
+      console.warn('openDoc error:', err);
       body.innerHTML=`<div class="meta" style="color:#b91c1c">${lang==='th'?'โหลดไม่สำเร็จ':'Failed to load document'}</div>`;
       saveBtn.onclick=null;
     }
   }
 
+  // initial
   loadHistory();
 }
