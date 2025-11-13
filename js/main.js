@@ -1,98 +1,94 @@
-// js/main.js
-// Adds cache cleanup, refresh button spinner, proper dashboard mounting, and tab routing.
+/**
+ * Inventory Frontend Main Controller
+ * Version: v12.4 (2025-11-12)
+ *
+ * Added: OUT History tab (table view + overlay detail/edit)
+ * Works with out_history.js
+ */
 
-import {
-  $, $$, STR, applyLangTexts, preloadLookups, bindPickerInputs,
-  toast, currentLang, cleanOldCache, setBtnLoading
-} from './shared.js';
+import mountDashboard from '../tabs/dashboard.js';
+import mountIn from '../tabs/in.js';
+import mountOut from '../tabs/out.js';
+import mountPurchase from '../tabs/purchase.js';
+import mountAdjust from '../tabs/adjust.js';
+import mountOutHistory from '../tabs/out_history.js';
 
-// Lazy import tab modules
-const TAB_MODULES = {
-  dashboard: () => import('../tabs/dashboard.js'),
-  out:       () => import('../tabs/out.js'),
-  in:        () => import('../tabs/in.js'),
-  adjust:    () => import('../tabs/adjust.js'),
-  purchase:  () => import('../tabs/purchase.js'),
-  out_history: () => import('../tabs/out_history.js';
+import { $, $$, STR } from '../js/shared.js';
 
+const APP_VERSION = "v12.4 (2025-11-12)";
+const TZ = "Asia/Bangkok";
+
+const SHEET = {
+  MATERIALS: "MaterialMaster",
+  PROJECTS: "Projects",
+  CONTRACTORS: "Contractors",
+  REQUESTERS: "Requesters",
+  MOVES: "Movements",
+  PURCHASES: "Purchases",
 };
 
-let LANG = currentLang();
-let currentTab = 'dashboard';
+// Tab modules mapping
+const TABS = {
+  dashboard: mountDashboard,
+  in: mountIn,
+  out: mountOut,
+  purchase: mountPurchase,
+  adjust: mountAdjust,
+  out_history: mountOutHistory, // ✅ new tab
+};
 
-async function mountTab(tabKey) {
-  const loader = TAB_MODULES[tabKey];
-  if (!loader) return;
-  const mod = await loader();
-  const root = $('#view');
-  await mod.default({ root, lang: LANG });
-  bindPickerInputs(root, LANG);
+let currentTab = null;
+let currentLang = "th"; // default Thai
+
+// ---------- UI helpers ----------
+function setActiveTab(tab){
+  $$("[data-tab]").forEach(b => b.classList.remove("active"));
+  const btn = $(`[data-tab="${tab}"]`);
+  if(btn) btn.classList.add("active");
 }
 
-async function init() {
-  // 0) Clean stale cache first (keeps fresh, drops old)
-  cleanOldCache();
+// ---------- Tab Loader ----------
+export async function loadTab(tab){
+  try {
+    const mountFn = TABS[tab];
+    if (!mountFn) throw new Error(`Unknown tab: ${tab}`);
 
-  // Language toggle
-  $('#lang-en')?.addEventListener('click', () => { LANG = 'en'; document.documentElement.lang = 'en'; onLangChange(); });
-  $('#lang-th')?.addEventListener('click', () => { LANG = 'th'; document.documentElement.lang = 'th'; onLangChange(); });
+    const view = $("#view");
+    setActiveTab(tab);
+    view.innerHTML = `<div class="meta" style="padding:1rem;">กำลังโหลด...</div>`;
 
-  // Tabs
-  $$('.tabs button').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const key = btn.getAttribute('data-tab');
-      if (!key) return;
-      $$('.tabs button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentTab = key;
-      await mountTab(currentTab);
+    await mountFn({ root: view, lang: currentLang });
+    currentTab = tab;
+    localStorage.setItem("lastTab", tab);
+  } catch (err) {
+    console.error("loadTab error:", err);
+    $("#view").innerHTML = `<div class="meta" style="color:#b91c1c;padding:1rem;">Error loading tab: ${err.message}</div>`;
+  }
+}
+
+// ---------- Navigation Setup ----------
+export function initNav(){
+  $$("[data-tab]").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      const name = btn.getAttribute("data-tab");
+      loadTab(name);
     });
   });
 
-  // 1) Preload lookups BEFORE first mount
-  try {
-    await preloadLookups();
-  } catch {
-    toast(LANG === 'th' ? 'โหลดข้อมูลเริ่มต้นไม่สำเร็จ กำลังใช้ข้อมูลเก่า' : 'Failed to load lookups; using cached data');
-  }
-
-  // 2) Apply language and bind pickers
-  applyLangTexts(LANG);
-  bindPickerInputs(document, LANG);
-
-  // 3) Manual refresh button with spinner
-  const refreshBtn = $('#refreshDataBtn');
-  refreshBtn?.addEventListener('click', async ()=>{
-    try {
-      setBtnLoading(refreshBtn, true);
-      // remove only our cached keys
-      const keys = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('cache:')) keys.push(k);
-      }
-      keys.forEach(k => localStorage.removeItem(k));
-
-      await preloadLookups();
-      toast(LANG==='th' ? 'รีเฟรชข้อมูลแล้ว' : 'Data refreshed');
-
-      // re-mount current tab so UI picks up fresh lists
-      await mountTab(currentTab);
-    } catch {
-      toast(LANG==='th' ? 'รีเฟรชไม่สำเร็จ' : 'Refresh failed');
-    } finally {
-      setBtnLoading(refreshBtn, false);
-    }
-  });
-
-  // 4) Mount default tab
-  await mountTab(currentTab);
+  const last = localStorage.getItem("lastTab");
+  const startTab = last && TABS[last] ? last : "dashboard";
+  loadTab(startTab);
 }
 
-function onLangChange() {
-  applyLangTexts(LANG);
-  bindPickerInputs(document, LANG);
-  mountTab(currentTab);
+// ---------- Footer info ----------
+function showVersion(){
+  const el = $("#appVersion");
+  if(!el) return;
+  el.textContent = APP_VERSION;
 }
 
-document.addEventListener('DOMContentLoaded', init);
+// ---------- Initialize ----------
+document.addEventListener("DOMContentLoaded",()=>{
+  showVersion();
+  initNav();
+});
