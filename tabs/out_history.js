@@ -156,19 +156,38 @@ export default async function mount({ root, lang }){
     }
     .chip b { font-weight:600; margin-right:.35rem; color:#222; }
 
-    /* Expanding search */
-    .hist-search { display:flex; align-items:center; gap:.4rem; }
-    .hist-search input {
-      width:0;
-      opacity:0;
-      max-width: 0;
-      transition: width .18s ease, opacity .18s ease, max-width .18s ease;
-    }
-    .hist-search.open input {
-      width: min(54vw, 280px);
-      max-width: min(54vw, 280px);
-      opacity:1;
-    }
+/* COLLAPSED (icon only) */
+.hist-search {
+  display:flex;
+  align-items:center;
+  position:relative;
+  gap:.3rem;
+}
+
+.hist-search input {
+  width:0;
+  max-width:0;
+  opacity:0;
+  transition: width .18s ease, max-width .18s ease, opacity .18s ease;
+}
+
+/* EXPANDED — fits inside phone screens */
+.hist-search.open input {
+  opacity:1;
+
+  /* On phones: never exceed toolbar space */
+  width: clamp(90px, 40vw, 160px);
+  max-width: clamp(90px, 40vw, 160px);
+
+  /* Desktop: allow larger search field */
+}
+
+@media (min-width:900px){
+  .hist-search.open input {
+    width: 240px;
+    max-width: 240px;
+  }
+}
     .hist-search .icon { min-width:34px; }
   `;
   root.appendChild(style);
