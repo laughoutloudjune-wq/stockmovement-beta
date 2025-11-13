@@ -1,32 +1,32 @@
-// tabs/out_history.js
-// OUT History tab (table view) + detail/edit overlay
-// Reuses the same line layout/stock badge logic as the OUT form.
+// tabs/out_history.js (Public v1.1)
+// OUT History tab with outline list: Date, Contractor, Requester, Project
+// Detail/Edit overlay reuses OUT line layout with live stock badges.
 
 import {
   $, $$, STR, bindPickerInputs, openPicker,
   apiGet, apiPost, setBtnLoading, esc, toast, stockBadge
 } from '../js/shared.js';
 
-// Reuse line UI & stock behavior from OUT tab (copied to keep modules independent)
+// Reuse line UI & stock behavior from OUT tab
 function OutLine(lang){
-  const card=document.createElement('div'); 
+  const card=document.createElement('div');
   card.className='line';
 
   const name=document.createElement('input');
   name.placeholder=(lang==='th' ? 'พิมพ์เพื่อค้นหา…' : 'Type to search…');
-  name.readOnly=true; 
+  name.readOnly=true;
   name.setAttribute('data-picker','materials');
 
   const qty=document.createElement('input');
   qty.type='number'; qty.min='0'; qty.step='any'; qty.placeholder='0'; qty.inputMode='decimal';
 
-  const meta=document.createElement('div'); 
+  const meta=document.createElement('div');
   meta.className='rowitem'; meta.style.justifyContent='flex-start';
 
-  const label=document.createElement('span'); 
+  const label=document.createElement('span');
   label.className='meta'; label.textContent=(lang==='th'?'คงเหลือ: ':'Stock: ');
 
-  let badge=document.createElement('span'); 
+  let badge=document.createElement('span');
   badge.className='badge'; badge.textContent='-';
 
   meta.appendChild(label); meta.appendChild(badge);
@@ -35,12 +35,13 @@ function OutLine(lang){
   const rm=document.createElement('button'); rm.type='button'; rm.className='btn small'; rm.textContent='×'; rm.onclick=()=>card.remove();
   actions.appendChild(rm);
 
-  // Compose
+  // Layout mirrors OUT tab (name, qty in grid)
   const grid=document.createElement('div'); grid.className='grid';
   grid.appendChild(name); grid.appendChild(qty);
+
   card.appendChild(grid); card.appendChild(meta); card.appendChild(actions);
 
-  // Picker + Stock
+  // Picker + live stock badge
   name.addEventListener('click', ()=>openPicker(name,'materials', lang));
   name.addEventListener('change', async ()=>{
     const v=name.value.trim();
@@ -77,7 +78,7 @@ export default async function mount({ root, lang }){
       </div>
     </section>
 
-    <!-- Overlay -->
+    <!-- Detail/Edit overlay -->
     <div id="histOverlay" aria-hidden="true"
          style="position:fixed;inset:0;z-index:1960;display:none;align-items:center;justify-content:center;
                 background:rgba(15,18,23,0.12);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);">
@@ -105,39 +106,45 @@ export default async function mount({ root, lang }){
   const saveBtn=$('#histSave',root);
 
   closeBtn.onclick=()=>{ overlay.style.display='none'; };
-
   $('#histReload',root).onclick=()=>loadHistory();
   $('#histSearchText',root).onkeydown=(e)=>{ if(e.key==='Enter') loadHistory(); };
 
   async function loadHistory(){
     tableWrap.innerHTML=`<div class="meta">${lang==='th'?'กำลังโหลด...':'Loading...'}</div>`;
     try{
-      // Expecting grouped API (one row per DocNo). If your backend returns per-line, it’s fine too.
       const res=await apiPost('out_SearchHistory',{limit:0});
       const rows=Array.isArray(res.rows)?res.rows:[];
-      const html=`
-        <table class="mini" style="width:100%;border-collapse:collapse;">
-          <thead><tr>
-            <th>${lang==='th'?'เลขที่':'DocNo'}</th>
-            <th>${lang==='th'?'เวลา':'Time'}</th>
-            <th>${lang==='th'?'โครงการ':'Project'}</th>
+
+      // Outline table: Date, Contractor, Requester, Project
+      const thead = `
+        <thead>
+          <tr>
+            <th>${lang==='th'?'วันที่จ่ายออก':'Date OUT'}</th>
             <th>${lang==='th'?'ผู้รับเหมา':'Contractor'}</th>
             <th>${lang==='th'?'ผู้ขอเบิก':'Requester'}</th>
-            <th>${lang==='th'?'รายการ':'Items'}</th>
-            <th>${lang==='th'?'รวม':'Total'}</th>
-          </tr></thead>
-          <tbody>${rows.map(r=>`
+            <th>${lang==='th'?'โครงการ':'Project'}</th>
+          </tr>
+        </thead>`;
+
+      const tbody = `
+        <tbody>
+          ${rows.map(r=>`
             <tr class="click-row" data-doc="${esc(r.doc)}" style="cursor:pointer;">
-              <td><strong>${esc(r.doc)}</strong></td>
               <td>${esc(r.ts||'')}</td>
-              <td>${esc(r.project||'-')}</td>
               <td>${esc(r.contractor||'-')}</td>
               <td>${esc(r.requester||'-')}</td>
-              <td>${esc(r.itemSummary||'')}</td>
-              <td>${esc(String(r.totalQty||0))}</td>
-            </tr>`).join('')}</tbody>
-        </table>`;
-      tableWrap.innerHTML=html;
+              <td>${esc(r.project||'-')}</td>
+            </tr>
+          `).join('')}
+        </tbody>`;
+
+      tableWrap.innerHTML = `
+        <div style="overflow:auto">
+          <table class="mini" style="width:100%;border-collapse:collapse;">
+            ${thead}${tbody}
+          </table>
+        </div>`;
+
       $$('.click-row',tableWrap).forEach(tr=>{ tr.onclick=()=>openDoc(tr.dataset.doc); });
     }catch(err){
       console.warn('loadHistory error:',err);
@@ -156,7 +163,7 @@ export default async function mount({ root, lang }){
       if(!res||!res.ok||!res.doc) throw new Error(res?.message||'Not found');
       const d=res.doc;
 
-      // Build same layout as OUT tab (lines with stock badge)
+      // Build same lines layout as OUT tab (with stock badges)
       const linesWrap=document.createElement('div'); linesWrap.className='lines';
       (d.lines||[]).forEach(li=>{
         const card=OutLine(lang);
@@ -182,7 +189,6 @@ export default async function mount({ root, lang }){
       `;
       $('#outEditLines',body).appendChild(linesWrap);
 
-      // Bind pickers & actions
       bindPickerInputs(box,lang);
       $$('#outEditLines [data-picker="materials"]', box).forEach(inp=>{
         inp.addEventListener('click', ()=>openPicker(inp,'materials',lang));
@@ -195,7 +201,6 @@ export default async function mount({ root, lang }){
         i.click(); // open immediately
       };
 
-      // Save
       saveBtn.onclick = async ()=>{
         const rows=$$('#outEditLines .line', body);
         const lines=[];
