@@ -70,7 +70,7 @@ export default async function mount({ root, lang }){
         <h3 style="margin:0;">📜 ${lang==='th'?'ประวัติการจ่ายออก (OUT)':'OUT History'}</h3>
         <div style="display:flex;gap:.5rem;align-items:center;">
           <input id="histSearchText" placeholder="${lang==='th'?'ค้นหา...':'Search...'}" style="min-width:16rem"/>
-          <button class="btn small" id="histReload">⟲ ${lang==='th'?'โหลดใหม่':'Reload'}</button>
+          <button class="btn small" id="histReload">⟲ ${lang==='th'?'':'Reload'}</button>
         </div>
       </div>
       <div id="histListWrap" style="margin-top:.75rem;"></div>
