@@ -1,5 +1,6 @@
-// tabs/out.js (Public v1.0)
-// OUT form tab — can record new OUT transactions and link to OUT History tab.
+// tabs/out.js
+// Material OUT screen with speed-dial FAB (“Add Item” + “Submit Form”).
+// Unit field removed. Restores "Current Stock" badge per line.
 
 import {
   $, $$, STR, bindPickerInputs, openPicker,
@@ -7,123 +8,240 @@ import {
 } from '../js/shared.js';
 
 function OutLine(lang){
-  const card=document.createElement('div');
+  const card=document.createElement('div'); 
   card.className='line';
 
+  // Inputs
   const name=document.createElement('input');
-  name.placeholder=(lang==='th'?'พิมพ์เพื่อค้นหา…':'Type to search…');
-  name.readOnly=true;
+  name.placeholder=(lang==='th' ? 'พิมพ์เพื่อค้นหา…' : 'Type to search…');
+  name.readOnly=true; 
   name.setAttribute('data-picker','materials');
 
   const qty=document.createElement('input');
-  qty.type='number'; qty.min='0'; qty.step='any'; qty.placeholder='0'; qty.inputMode='decimal';
+  qty.type='number'; 
+  qty.min='0'; 
+  qty.step='any'; 
+  qty.placeholder='0'; 
+  qty.inputMode='decimal';
 
-  const meta=document.createElement('div');
-  meta.className='meta'; meta.innerHTML=`${lang==='th'?'คงเหลือ:':'Stock:'} <span class="badge">-</span>`;
+  const note=document.createElement('input');
+  note.placeholder=(lang==='th'?'หมายเหตุ (ถ้ามี)':'Note (optional)');
 
-  const rm=document.createElement('button');
-  rm.type='button'; rm.className='btn small red'; rm.textContent='×'; rm.onclick=()=>card.remove();
+  // Grid (name, qty, note)
+  const grid=document.createElement('div'); 
+  grid.className='grid';
+  grid.appendChild(name);
+  grid.appendChild(qty);
+  grid.appendChild(note);
 
-  card.append(name, qty, meta, rm);
+  // Meta row: Stock badge
+  const meta=document.createElement('div'); 
+  meta.className='rowitem'; 
+  meta.style.justifyContent='flex-start';
 
-  name.addEventListener('click',()=>openPicker(name,'materials',lang));
+  const label=document.createElement('span'); 
+  label.className='meta'; 
+  label.textContent = (lang==='th' ? 'คงเหลือ: ' : 'Stock: ');
+
+  // start as "-" badge
+  let badge = document.createElement('span'); 
+  badge.className='badge'; 
+  badge.textContent='-';
+
+  meta.appendChild(label); 
+  meta.appendChild(badge);
+
+  // Row actions
+  const actions=document.createElement('div'); 
+  actions.className='actions';
+  const rm=document.createElement('button'); 
+  rm.type='button'; 
+  rm.className='btn small'; 
+  rm.textContent='×'; 
+  rm.onclick=()=>card.remove();
+  actions.appendChild(rm);
+
+  // Compose line
+  card.appendChild(grid); 
+  card.appendChild(meta); 
+  card.appendChild(actions);
+
+  // Open picker
+  name.addEventListener('click', ()=>openPicker(name,'materials', lang));
+
+  // Stock badge
   name.addEventListener('change', async ()=>{
-    const badge=meta.querySelector('.badge');
-    badge.innerHTML='<span class="spinner"></span>';
+    const v=name.value.trim();
+    if(!v){
+      const bNew = document.createElement('span');
+      bNew.className='badge'; 
+      bNew.textContent='-';
+      meta.replaceChild(bNew, badge);
+      badge = bNew;
+      return;
+    }
+
+    const spin=document.createElement('span');
+    spin.className = 'badge';
+    spin.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span>';
+    meta.replaceChild(spin, badge);
+    badge = spin;
+
     try{
-      const res=await apiGet('getCurrentStock',{material:name.value.trim()});
-      const n=(res&&res.ok)?Number(res.stock):null;
-      const mn=(res&&res.ok)?Number(res.min||0):null;
-      const newBadge=stockBadge(n,mn);
-      meta.replaceChild(newBadge,badge);
-    }catch{ badge.textContent='!'; badge.className='badge red'; }
+      const res = await apiGet('getCurrentStock', { material: v });
+      const n  = (res && res.ok) ? Number(res.stock) : null;
+      const mn = (res && res.ok) ? Number(res.min||0) : null;
+      const bNew = stockBadge(n, mn); // uses shared color logic (red/yellow/green)
+      meta.replaceChild(bNew, badge);
+      badge = bNew;
+    }catch(e){
+      const bErr = document.createElement('span');
+      bErr.className='badge red';
+      bErr.textContent='!';
+      meta.replaceChild(bErr, badge);
+      badge = bErr;
+    }
   });
 
   return card;
 }
 
 function collectLines(rootSel){
-  const arr=[];
+  const out=[];
   $$(rootSel+' .line').forEach(c=>{
-    const name=c.querySelector('input[data-picker="materials"]').value.trim();
-    const qty=Number(c.querySelector('input[type="number"]').value)||0;
-    if(name) arr.push({name,qty});
+    const nameEl=c.querySelector('input[data-picker="materials"]');
+    const qtyEl=c.querySelector('input[type="number"]');
+    const noteEl=c.querySelector('input[placeholder^="หมายเหตุ"],input[placeholder^="Note"]');
+    const name=nameEl?nameEl.value.trim():'';
+    const qty=Number(qtyEl?qtyEl.value:0)||0;
+    const note=noteEl?noteEl.value.trim():'';
+    if (name) out.push({name, qty, note});
   });
-  return arr;
+  return out;
 }
 
-export default async function mount({root,lang}){
-  const S=STR[lang];
-  root.innerHTML=`
+export default async function mount({ root, lang }){
+  const S = STR[lang];
+
+  root.innerHTML = `
     <section class="card glass">
       <h3>${S.outTitle}</h3>
       <div class="row">
-        <div><label>${S.outDate}</label><input id="OutDate" type="date"/></div>
-        <div><label>${S.proj}</label><input id="ProjectInput" data-picker="projects" readonly placeholder="${S.pick}"/></div>
+        <div>
+          <label>${S.outDate}</label>
+          <input id="OutDate" type="date" />
+        </div>
+        <div>
+          <label>${S.proj}</label>
+          <input id="ProjectInput" data-picker="projects" placeholder="${S.pick}" readonly />
+        </div>
       </div>
       <div class="row">
-        <div><label>${S.contractor}</label><input id="ContractorInput" data-picker="contractors" readonly placeholder="${S.pickAdd}"/></div>
-        <div><label>${S.requester}</label><input id="RequesterInput" data-picker="requesters" readonly placeholder="${S.pickAdd}"/></div>
+        <div>
+          <label>${S.contractor}</label>
+          <input id="ContractorInput" data-picker="contractors" placeholder="${S.pickAdd}" readonly />
+        </div>
+        <div>
+          <label>${S.requester}</label>
+          <input id="RequesterInput" data-picker="requesters" placeholder="${S.pickAdd}" readonly />
+        </div>
       </div>
-      <div class="row"><label>${S.note}</label><input id="Note" placeholder="${lang==='th'?'ถ้ามี':'Optional'}"/></div>
+      <div class="row">
+        <div>
+          <label>${S.note}</label>
+          <input id="Note" placeholder="${lang==='th'?'ถ้ามี':'Optional'}" />
+        </div>
+      </div>
+
       <div class="lines" id="outLines"></div>
+
       <div style="text-align:right;margin-top:.5rem;">
         <button class="btn small" id="openOutHistoryBtn">📜 ${lang==='th'?'ประวัติการจ่ายออก':'OUT History'}</button>
       </div>
     </section>
 
     <div class="fab" id="fab">
-      <button class="fab-main" id="fabMain" aria-expanded="false"><span class="icon">＋</span></button>
-      <div class="mini" id="fabSubmitWrap">
+      <div class="mini" id="fabSubmitWrap" aria-hidden="true">
         <div class="label">${S.btnSubmit}</div>
-        <button class="btn small primary" id="fabSubmitBtn"><span class="btn-label">💾</span></button>
+        <button class="btn small primary" id="fabSubmitBtn" type="button">
+          <span class="btn-label">💾</span><span class="btn-spinner"><span class="spinner"></span></span>
+        </button>
       </div>
-      <div class="mini" id="fabAddWrap">
+      <div class="mini" id="fabAddWrap" aria-hidden="true">
         <div class="label">${S.btnAdd}</div>
-        <button class="btn small" id="fabAddBtn"><span class="btn-label">＋</span></button>
+        <button class="btn small" id="fabAddBtn" type="button">
+          <span class="btn-label">＋</span><span class="btn-spinner"><span class="spinner"></span></span>
+        </button>
       </div>
+      <button class="fab-main" id="fabMain" aria-expanded="false" aria-controls="fab"><span class="icon">＋</span></button>
     </div>
   `;
 
-  const lines=$('#outLines');
+  // local helpers
+  const lines=$('#outLines',root);
   function addLine(){ lines.appendChild(OutLine(lang)); bindPickerInputs(root,lang); }
   function clearForm(){
     lines.innerHTML=''; addLine();
-    $('#Note').value=''; $('#OutDate').value=todayStr();
-    $('#ProjectInput').value=''; $('#ContractorInput').value=''; $('#RequesterInput').value='';
+    $('#Note',root).value=''; $('#OutDate',root).value=todayStr();
+    $('#ProjectInput',root).value=''; $('#ContractorInput',root).value=''; $('#RequesterInput',root).value='';
   }
 
-  addLine();
-  $('#OutDate').value=todayStr();
+  // FAB behavior
+  const fab = $('#fab', root);
+  const fabMain = $('#fabMain', root);
+  const fabAdd = $('#fabAddBtn', root);
+  const fabSubmit = $('#fabSubmitBtn', root);
 
-  $('#ProjectInput').addEventListener('click',()=>openPicker($('#ProjectInput'),'projects',lang));
-  $('#ContractorInput').addEventListener('click',()=>openPicker($('#ContractorInput'),'contractors',lang));
-  $('#RequesterInput').addEventListener('click',()=>openPicker($('#RequesterInput'),'requesters',lang));
+  function toggleFab(){
+    const expanded = fab.classList.toggle('expanded');
+    fabMain.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  }
+  fabMain.addEventListener('click', toggleFab);
+  fabAdd.addEventListener('click', addLine);
 
-  $('#fabAddBtn').onclick=addLine;
-  $('#fabSubmitBtn').onclick=async()=>{
-    setBtnLoading($('#fabSubmitBtn'),true);
-    const p={
+  fabSubmit.addEventListener('click', async ()=>{
+    setBtnLoading(fabSubmit, true);
+    const p = {
       type:'OUT',
-      project:$('#ProjectInput').value.trim(),
-      contractor:$('#ContractorInput').value.trim(),
-      requester:$('#RequesterInput').value.trim(),
-      note:$('#Note').value.trim(),
-      date:$('#OutDate').value.trim(),
-      lines:collectLines('#outLines')
+      project: $('#ProjectInput', root).value.trim(),
+      contractor: $('#ContractorInput', root).value.trim(),
+      requester: $('#RequesterInput', root).value.trim(),
+      note: $('#Note', root).value.trim(),
+      date: $('#OutDate', root).value.trim(),
+      lines: collectLines('#outLines')
     };
-    if(!p.lines.length){ toast(lang==='th'?'กรุณาเพิ่มรายการ':'Add at least one line'); setBtnLoading($('#fabSubmitBtn'),false); return;}
+    if (!p.lines.length){
+      setBtnLoading(fabSubmit,false); 
+      return toast(lang==='th'?'กรุณาเพิ่มรายการ':'Add at least one line');
+    }
     try{
-      const res=await apiPost('submitMovementBulk',p);
-      if(res&&res.ok){ toast('✅ '+(lang==='th'?'บันทึกแล้ว':'Saved')+' '+(res.docNo||'')); clearForm(); }
-      else toast(res?.message||'Error');
-    }catch{ toast('❌ '+(lang==='th'?'เกิดข้อผิดพลาด':'Failed')); }
-    finally{ setBtnLoading($('#fabSubmitBtn'),false); }
-  };
+      const res = await apiPost('submitMovementBulk', p);
+      if(res && res.ok){
+        toast((lang==='th'?'บันทึกแล้ว • เอกสาร ':'Saved • Doc ') + (res.docNo||''));
+        clearForm();
+      }else{
+        toast((res && res.message) || 'Error');
+      }
+    }catch{
+      toast(lang==='th'?'เกิดข้อผิดพลาดในการบันทึก':'Failed to submit');
+    }finally{
+      setBtnLoading(fabSubmit, false);
+      fab.classList.remove('expanded');
+      fabMain.setAttribute('aria-expanded','false');
+    }
+  });
 
-  // link to OUT History tab
-  $('#openOutHistoryBtn').onclick=()=>{
-    const evt=new CustomEvent('switch-tab',{detail:'out_history'});
-    window.dispatchEvent(evt);
-  };
+  // Header pickers
+  $('#ProjectInput', root).addEventListener('click', ()=>openPicker($('#ProjectInput', root),'projects', lang));
+  $('#ContractorInput', root).addEventListener('click', ()=>openPicker($('#ContractorInput', root),'contractors', lang));
+  $('#RequesterInput', root).addEventListener('click', ()=>openPicker($('#RequesterInput', root),'requesters', lang));
+
+  // Init
+  $('#OutDate', root).value=todayStr();
+  addLine();
+
+  // 🔗 Open OUT History tab (no layout change)
+  $('#openOutHistoryBtn', root)?.addEventListener('click', ()=>{
+    window.dispatchEvent(new CustomEvent('switch-tab',{ detail:'out_history' }));
+  });
 }
