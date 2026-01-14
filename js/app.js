@@ -1,10 +1,14 @@
 import { createApp, ref, computed, onMounted } from 'vue';
 import { STR, currentLang, preloadLookups } from './shared.js';
 
-// Components
+// Import All Components
 import Dashboard from './components/Dashboard.js';
-// We will import others as we create them:
-// import StockOut from './components/Out.js';
+import StockIn from './components/In.js';
+import StockOut from './components/Out.js';
+import Adjust from './components/Adjust.js';
+import Purchase from './components/Purchase.js';
+import Report from './components/Report.js';
+import OutHistory from './components/OutHistory.js';
 
 const App = {
   setup() {
@@ -14,11 +18,13 @@ const App = {
 
     const tabs = [
       { key: 'dashboard', label: 'dash', component: Dashboard },
-      { key: 'out',       label: 'out',  component: null },
-      { key: 'in',        label: 'in',   component: null },
-      { key: 'adjust',    label: 'adj',  component: null },
-      { key: 'purchase',  label: 'pur',  component: null },
-      { key: 'report',    label: 'report', component: null },
+      { key: 'out',       label: 'out',  component: StockOut },
+      { key: 'in',        label: 'in',   component: StockIn },
+      { key: 'adjust',    label: 'adj',  component: Adjust },
+      { key: 'purchase',  label: 'pur',  component: Purchase },
+      { key: 'report',    label: 'report', component: Report },
+      // Extra tab for History (not in nav bar, but accessible)
+      { key: 'out_history', label: 'out', component: OutHistory } 
     ];
 
     const activeComponent = computed(() => tabs.find(t => t.key === currentTab.value)?.component);
@@ -28,8 +34,12 @@ const App = {
       localStorage.setItem('app_lang', l);
     };
 
+    // Listen for tab switching events from components (e.g., Out -> History)
     onMounted(() => {
-      preloadLookups(); // Start fetching data in background
+      preloadLookups();
+      window.addEventListener('switch-tab', (e) => {
+        if(e.detail) currentTab.value = e.detail;
+      });
     });
 
     return { lang, S, currentTab, tabs, activeComponent, switchLang };
@@ -45,9 +55,9 @@ const App = {
         </div>
       </header>
 
-      <nav class="sticky top-2 z-40 glass rounded-2xl p-1.5 flex gap-1 overflow-x-auto no-scrollbar shadow-lg shadow-blue-900/5">
+      <nav v-if="currentTab !== 'out_history'" class="sticky top-2 z-40 glass rounded-2xl p-1.5 flex gap-1 overflow-x-auto no-scrollbar shadow-lg shadow-blue-900/5">
         <button 
-          v-for="t in tabs" 
+          v-for="t in tabs.filter(x => x.key !== 'out_history')" 
           :key="t.key"
           @click="currentTab = t.key"
           :class="currentTab === t.key ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'"
@@ -57,14 +67,15 @@ const App = {
         </button>
       </nav>
 
+      <div v-else class="sticky top-2 z-40 flex">
+        <button @click="currentTab='out'" class="bg-white text-slate-600 px-4 py-2 rounded-xl shadow-sm border border-slate-200 font-bold text-sm flex items-center gap-2">
+           ⬅ Back to OUT
+        </button>
+      </div>
+
       <main class="flex-1">
         <transition name="fade" mode="out-in">
           <component v-if="activeComponent" :is="activeComponent" :lang="lang" />
-          
-          <div v-else class="flex flex-col items-center justify-center py-20 text-slate-400">
-            <div class="text-4xl mb-4 opacity-50">🚧</div>
-            <p>Tab "{{ currentTab }}" is under construction</p>
-          </div>
         </transition>
       </main>
     </div>
