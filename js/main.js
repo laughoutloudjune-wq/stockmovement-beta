@@ -1,105 +1,78 @@
-// js/main.js
-// Adds cache cleanup, refresh button spinner, proper dashboard mounting, and tab routing.
+import { createApp, ref, computed, onMounted } from 'vue';
+import { STR, applyLangTexts, currentLang } from './shared.js';
 
-import {
-  $, $$, STR, applyLangTexts, preloadLookups, bindPickerInputs,
-  toast, currentLang, cleanOldCache, setBtnLoading
-} from './shared.js';
+// Import Components (We will convert these one by one)
+import Dashboard from './components/Dashboard.js';
+// import StockIn from './components/StockIn.js'; // You would convert other tabs similarly
 
-// Lazy import tab modules
-const TAB_MODULES = {
-  dashboard: () => import('../tabs/dashboard.js'),
-  out:       () => import('../tabs/out.js'),
-  in:        () => import('../tabs/in.js'),
-  adjust:    () => import('../tabs/adjust.js'),
-  purchase:  () => import('../tabs/purchase.js'),
-  // NEW:
-  out_history: () => import('../tabs/out_history.js'),
+const App = {
+  setup() {
+    const lang = ref(currentLang()); // 'th' or 'en'
+    const currentTab = ref('dashboard');
+    const S = computed(() => STR[lang.value]);
+
+    // Simple Tab Mapping
+    const tabs = [
+      { key: 'dashboard', label: 'dash', component: Dashboard },
+      { key: 'out',       label: 'out',  component: null }, // Placeholder until converted
+      { key: 'in',        label: 'in',   component: null },
+      { key: 'adjust',    label: 'adj',  component: null },
+      { key: 'purchase',  label: 'pur',  component: null },
+      { key: 'report',    label: 'report', component: null },
+    ];
+
+    const activeComponent = computed(() => {
+      const t = tabs.find(t => t.key === currentTab.value);
+      return t ? t.component : null;
+    });
+
+    const switchLang = (l) => {
+      lang.value = l;
+      document.documentElement.lang = l;
+    };
+
+    return {
+      lang,
+      S,
+      currentTab,
+      tabs,
+      activeComponent,
+      switchLang
+    };
+  },
+  template: `
+    <div class="max-w-4xl mx-auto p-4 md:p-6 pb-24 space-y-6">
+      <header class="flex justify-between items-center">
+        <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">{{ S.title }}</h1>
+        <div class="flex bg-white rounded-full p-1 shadow-sm border border-slate-200">
+          <button @click="switchLang('th')" :class="{'bg-blue-500 text-white shadow-md': lang==='th', 'text-slate-500 hover:bg-slate-50': lang!=='th'}" class="px-4 py-1.5 rounded-full text-sm font-bold transition-all">ไทย</button>
+          <button @click="switchLang('en')" :class="{'bg-blue-500 text-white shadow-md': lang==='en', 'text-slate-500 hover:bg-slate-50': lang!=='en'}" class="px-4 py-1.5 rounded-full text-sm font-bold transition-all">EN</button>
+        </div>
+      </header>
+
+      <nav class="sticky top-2 z-50 glass rounded-2xl p-2 flex gap-2 overflow-x-auto no-scrollbar shadow-lg shadow-blue-900/5">
+        <button 
+          v-for="t in tabs" 
+          :key="t.key"
+          @click="currentTab = t.key"
+          :class="currentTab === t.key ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-slate-600 hover:bg-white/60'"
+          class="flex-shrink-0 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
+        >
+          {{ S.tabs[t.label] }}
+        </button>
+      </nav>
+
+      <main class="min-h-[50vh]">
+        <div v-if="activeComponent">
+          <component :is="activeComponent" :lang="lang" />
+        </div>
+        <div v-else class="text-center py-12 text-slate-400">
+          <div class="text-4xl mb-2">🚧</div>
+          <p>Tab "{{ currentTab }}" is being updated to Vue.</p>
+        </div>
+      </main>
+    </div>
+  `
 };
 
-let LANG = currentLang();
-let currentTab = 'dashboard';
-
-async function mountTab(tabKey) {
-  const loader = TAB_MODULES[tabKey];
-  if (!loader) return;
-  const mod = await loader();
-  const root = $('#view');
-  await mod.default({ root, lang: LANG });
-  bindPickerInputs(root, LANG);
-}
-
-async function init() {
-  // 0) Clean stale cache first (keeps fresh, drops old)
-  cleanOldCache();
-
-  // Language toggle
-  $('#lang-en')?.addEventListener('click', () => { LANG = 'en'; document.documentElement.lang = 'en'; onLangChange(); });
-  $('#lang-th')?.addEventListener('click', () => { LANG = 'th'; document.documentElement.lang = 'th'; onLangChange(); });
-
-  // Tabs
-  $$('.tabs button').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const key = btn.getAttribute('data-tab');
-      if (!key) return;
-      $$('.tabs button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentTab = key;
-      await mountTab(currentTab);
-    });
-  });
-
-  // Programmatic tab switch (used by OUT tab's History button)
-  window.addEventListener('switch-tab', async (e)=>{
-    const key = e.detail;
-    if (!key || !TAB_MODULES[key]) return;
-    const btn = $(`.tabs button[data-tab="${key}"]`);
-    if (btn) {
-      $$('.tabs button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-    }
-    currentTab = key;
-    await mountTab(currentTab);
-  });
-
-  // 1) Preload lookups BEFORE first mount
-  try {
-    await preloadLookups();
-  } catch {
-    toast(LANG === 'th' ? 'โหลดข้อมูลเริ่มต้นไม่สำเร็จ กำลังใช้ข้อมูลเก่า' : 'Failed to load lookups; using cached data');
-  }
-
-  // 2) Apply language and bind pickers
-  applyLangTexts(LANG);
-  bindPickerInputs(document, LANG);
-
-  // 3) Manual refresh button with spinner
-  const refreshBtn = $('#refreshDataBtn');
-  refreshBtn?.addEventListener('click', async ()=>{
-    try {
-      setBtnLoading(refreshBtn, true);
-      // remove only our cached keys
-      const keys = [];
-      for (let i=0;i<localStorage.length;i++){
-        const k = localStorage.key(i);
-        if(k && k.startsWith('cache:')) keys.push(k);
-      }
-      keys.forEach(k=>localStorage.removeItem(k));
-      await preloadLookups(true); // force fresh
-      toast(LANG==='th'?'รีเฟรชข้อมูลแล้ว':'Data refreshed');
-    } finally {
-      setBtnLoading(refreshBtn, false);
-    }
-  });
-
-  // 4) Mount default tab
-  await mountTab(currentTab);
-}
-
-function onLangChange() {
-  applyLangTexts(LANG);
-  bindPickerInputs(document, LANG);
-  mountTab(currentTab);
-}
-
-document.addEventListener('DOMContentLoaded', init);
+createApp(App).mount('#app');
