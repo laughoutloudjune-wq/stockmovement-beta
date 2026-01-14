@@ -1,75 +1,71 @@
 import { createApp, ref, computed, onMounted } from 'vue';
-import { STR, applyLangTexts, currentLang } from './shared.js';
+import { STR, currentLang, preloadLookups } from './shared.js';
 
-// Import Components (We will convert these one by one)
+// Components
 import Dashboard from './components/Dashboard.js';
-// import StockIn from './components/StockIn.js'; // You would convert other tabs similarly
+// We will import others as we create them:
+// import StockOut from './components/Out.js';
 
 const App = {
   setup() {
-    const lang = ref(currentLang()); // 'th' or 'en'
+    const lang = ref(currentLang());
     const currentTab = ref('dashboard');
     const S = computed(() => STR[lang.value]);
 
-    // Simple Tab Mapping
     const tabs = [
       { key: 'dashboard', label: 'dash', component: Dashboard },
-      { key: 'out',       label: 'out',  component: null }, // Placeholder until converted
+      { key: 'out',       label: 'out',  component: null },
       { key: 'in',        label: 'in',   component: null },
       { key: 'adjust',    label: 'adj',  component: null },
       { key: 'purchase',  label: 'pur',  component: null },
       { key: 'report',    label: 'report', component: null },
     ];
 
-    const activeComponent = computed(() => {
-      const t = tabs.find(t => t.key === currentTab.value);
-      return t ? t.component : null;
-    });
+    const activeComponent = computed(() => tabs.find(t => t.key === currentTab.value)?.component);
 
     const switchLang = (l) => {
       lang.value = l;
-      document.documentElement.lang = l;
+      localStorage.setItem('app_lang', l);
     };
 
-    return {
-      lang,
-      S,
-      currentTab,
-      tabs,
-      activeComponent,
-      switchLang
-    };
+    onMounted(() => {
+      preloadLookups(); // Start fetching data in background
+    });
+
+    return { lang, S, currentTab, tabs, activeComponent, switchLang };
   },
   template: `
-    <div class="max-w-4xl mx-auto p-4 md:p-6 pb-24 space-y-6">
-      <header class="flex justify-between items-center">
-        <h1 class="text-2xl font-extrabold text-slate-800 tracking-tight">{{ S.title }}</h1>
+    <div class="max-w-4xl mx-auto p-4 pb-24 min-h-screen flex flex-col gap-6">
+      
+      <header class="flex justify-between items-center px-1">
+        <h1 class="text-2xl font-bold text-slate-800 tracking-tight">{{ S.title }}</h1>
         <div class="flex bg-white rounded-full p-1 shadow-sm border border-slate-200">
-          <button @click="switchLang('th')" :class="{'bg-blue-500 text-white shadow-md': lang==='th', 'text-slate-500 hover:bg-slate-50': lang!=='th'}" class="px-4 py-1.5 rounded-full text-sm font-bold transition-all">ไทย</button>
-          <button @click="switchLang('en')" :class="{'bg-blue-500 text-white shadow-md': lang==='en', 'text-slate-500 hover:bg-slate-50': lang!=='en'}" class="px-4 py-1.5 rounded-full text-sm font-bold transition-all">EN</button>
+          <button @click="switchLang('th')" :class="lang==='th'?'bg-blue-500 text-white shadow':'text-slate-500 hover:bg-slate-50'" class="px-4 py-1 rounded-full text-sm font-bold transition-all">TH</button>
+          <button @click="switchLang('en')" :class="lang==='en'?'bg-blue-500 text-white shadow':'text-slate-500 hover:bg-slate-50'" class="px-4 py-1 rounded-full text-sm font-bold transition-all">EN</button>
         </div>
       </header>
 
-      <nav class="sticky top-2 z-50 glass rounded-2xl p-2 flex gap-2 overflow-x-auto no-scrollbar shadow-lg shadow-blue-900/5">
+      <nav class="sticky top-2 z-40 glass rounded-2xl p-1.5 flex gap-1 overflow-x-auto no-scrollbar shadow-lg shadow-blue-900/5">
         <button 
           v-for="t in tabs" 
           :key="t.key"
           @click="currentTab = t.key"
-          :class="currentTab === t.key ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-slate-600 hover:bg-white/60'"
-          class="flex-shrink-0 px-4 py-2.5 rounded-xl text-sm font-bold transition-all"
+          :class="currentTab === t.key ? 'bg-white text-blue-600 shadow-sm ring-1 ring-black/5' : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'"
+          class="flex-shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-all whitespace-nowrap"
         >
           {{ S.tabs[t.label] }}
         </button>
       </nav>
 
-      <main class="min-h-[50vh]">
-        <div v-if="activeComponent">
-          <component :is="activeComponent" :lang="lang" />
-        </div>
-        <div v-else class="text-center py-12 text-slate-400">
-          <div class="text-4xl mb-2">🚧</div>
-          <p>Tab "{{ currentTab }}" is being updated to Vue.</p>
-        </div>
+      <main class="flex-1">
+        <transition name="fade" mode="out-in">
+          <component v-if="activeComponent" :is="activeComponent" :lang="lang" />
+          
+          <div v-else class="flex flex-col items-center justify-center py-20 text-slate-400">
+            <div class="text-4xl mb-4 opacity-50">🚧</div>
+            <p>Tab "{{ currentTab }}" is under construction</p>
+          </div>
+        </transition>
       </main>
     </div>
   `
