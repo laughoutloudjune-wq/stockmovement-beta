@@ -21,7 +21,6 @@ export default {
     };
 
     const submit = async () => {
-      // Filter empty lines
       const validLines = lines.value
         .filter(l => l.name && l.qty)
         .map(l => ({ name: l.name, qty: Number(l.qty) }));
@@ -33,24 +32,17 @@ export default {
 
       loading.value = true;
       try {
-        const payload = {
-          type: 'IN',
-          date: date.value,
-          lines: validLines
-        };
-
+        const payload = { type: 'IN', date: date.value, lines: validLines };
         const res = await apiPost('submitMovementBulk', payload);
         
         if (res && res.ok) {
           toast((props.lang === 'th' ? 'บันทึกแล้ว • เอกสาร ' : 'Saved • Doc ') + (res.docNo || ''));
-          // Reset Form
           lines.value = [{ name: '', qty: '' }];
           date.value = todayStr();
         } else {
           toast(res?.message || 'Error');
         }
       } catch (e) {
-        console.error(e);
         toast('Failed to submit');
       } finally {
         loading.value = false;
@@ -72,20 +64,16 @@ export default {
 
       <div class="space-y-3">
         <div v-for="(line, idx) in lines" :key="idx" class="glass rounded-2xl p-4 shadow-sm relative animate-fade-in-up">
-          
-          <button @click="removeLine(idx)" class="absolute top-2 right-2 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-            ×
-          </button>
+          <button @click="removeLine(idx)" class="absolute top-2 right-2 w-8 h-8 flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">×</button>
 
           <div class="grid grid-cols-12 gap-3 mt-2">
             <div class="col-span-8">
               <ItemPicker 
                 v-model="line.name" 
                 source="MATERIALS" 
-                :placeholder="props.lang === 'th' ? 'ค้นหาวัสดุ...' : 'Search material...'" 
+                :placeholder="lang === 'th' ? 'ค้นหาวัสดุ...' : 'Search material...'" 
               />
             </div>
-            
             <div class="col-span-4">
               <input 
                 type="number" 
@@ -105,16 +93,11 @@ export default {
       </div>
 
       <div class="fixed bottom-6 left-4 right-4 max-w-4xl mx-auto z-30">
-        <button 
-          @click="submit" 
-          :disabled="loading"
-          class="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold text-lg py-4 rounded-2xl shadow-xl shadow-blue-500/30 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-        >
+        <button @click="submit" :disabled="loading" class="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold text-lg py-4 rounded-2xl shadow-xl shadow-blue-500/30 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-70 disabled:cursor-not-allowed">
           <span v-if="loading" class="animate-spin text-2xl">C</span>
           <span v-else>💾 {{ S.btnSubmit }}</span>
         </button>
       </div>
-
     </div>
   `
 };
